@@ -1,0 +1,10 @@
+{
+  "python_version": "3.11",
+  "dependencies": [
+    "."
+  ],
+  "graphs": {
+    "my_graph": "./LangChain_LangGraph/day1_langgraph/core_checkpointer.py:graph"
+  },
+  "env": ".env"
+}

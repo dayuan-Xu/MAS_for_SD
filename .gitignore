@@ -1,0 +1,48 @@
+# 字节码文件（Python编译生成）
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 分发/打包相关
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv/
+env.local/
+
+# 环境变量配置文件
+.env
+.env.local
+.env.*.local
+
+# 日志文件
+*.log
+logs/
+
+# 缓存文件
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE/编辑器配置
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store  # Mac系统文件
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*_checkpoint.ipynb
+
+# 数据库文件
+*.db
+*.sqlite3
