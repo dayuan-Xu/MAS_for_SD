@@ -1,0 +1,1 @@
+# 本模块负责提供基于setting中的PostgreSQL URL创建的全局唯一 LangGraph Checkopointer、Store对象。

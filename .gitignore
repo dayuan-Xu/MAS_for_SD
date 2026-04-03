@@ -46,3 +46,7 @@ htmlcov/
 # 数据库文件
 *.db
 *.sqlite3
+
+
+/DeepAgent_workspace/
+/.langgraph_api/

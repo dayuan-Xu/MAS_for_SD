@@ -4,7 +4,7 @@
     "."
   ],
   "graphs": {
-    "my_graph": "./LangChain_LangGraph/day1_langgraph/core_checkpointer.py:graph"
+    "my_graph": "./LangChain_LangGraph/langgraph/core_checkpointer.py:graph"
   },
   "env": ".env"
 }
