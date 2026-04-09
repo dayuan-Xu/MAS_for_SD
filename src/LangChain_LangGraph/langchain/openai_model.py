@@ -1,5 +1,6 @@
 from langchain_openai import ChatOpenAI
 from rich.pretty import pprint
+
 from src.config.llm import LLMs
 from src.config.settings import settings
 
@@ -11,7 +12,7 @@ reasoning = {
 model = ChatOpenAI(
     model=LLMs["gpt-5-nano"], reasoning=reasoning,
     output_version="responses/v1",
-    base_url=settings.OPENAI_BASE_URL,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 response = model.invoke("如何正确使用chatgpt做毕设?")
 pprint(response)
@@ -24,7 +25,6 @@ for block in response.content:
     if block["type"] == "reasoning":
         for summary in block["summary"]:
             print(summary["text"])
-
 
 """
 AIMessage(

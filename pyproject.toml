@@ -1,12 +1,12 @@
 # 这是给 pytest 用的配置
 [tool.pytest.ini_options]
-testpaths = ["tests"]       # 测试文件放在 tests 文件夹
+testpaths = ["test"]       # 测试文件放在 tests 文件夹
 python_files = ["test_*.py"] # 以 test_ 开头的文件都是测试文件
 addopts = "-v"              # 运行测试时默认显示详细信息
 
 # 这是给测试覆盖率用的配置
 [tool.coverage.run]
-source = ["myapp"]          # 要测试覆盖率的源码文件夹
+source = ["src"]          # 要测试覆盖率的源码文件夹
 
 # 覆盖率报告配置
 [tool.coverage.report]

@@ -11,8 +11,8 @@ gpt5 = ChatOpenAI(
     max_tokens=8192,
     max_retries=3,
     timeout=120,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 
 gpt5_mini = ChatOpenAI(
@@ -21,8 +21,8 @@ gpt5_mini = ChatOpenAI(
     max_tokens=8192,
     timeout=120,
     max_retries=3,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 
 gpt5_nano = ChatOpenAI(
@@ -31,8 +31,8 @@ gpt5_nano = ChatOpenAI(
     max_tokens=8192,
     timeout=120,
     max_retries=3,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 
 )
 
@@ -42,8 +42,8 @@ gpt41 = ChatOpenAI(
     max_tokens=8192,
     timeout=120,
     max_retries=3,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 
 gpt41_mini = ChatOpenAI(
@@ -52,8 +52,8 @@ gpt41_mini = ChatOpenAI(
     max_tokens=8192,
     timeout=120,
     max_retries=3,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 
 gpt4o = ChatOpenAI(
@@ -62,8 +62,8 @@ gpt4o = ChatOpenAI(
     max_tokens=8192,
     timeout=120,
     max_retries=3,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 
 gpt4o_mini = ChatOpenAI(
@@ -72,8 +72,8 @@ gpt4o_mini = ChatOpenAI(
     max_tokens=8192,
     timeout=120,
     max_retries=3,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 
 gpt41_nano = ChatOpenAI(
@@ -82,8 +82,8 @@ gpt41_nano = ChatOpenAI(
     max_tokens=8192,
     timeout=120,
     max_retries=3,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 
 gpt35_turbo = ChatOpenAI(
@@ -92,11 +92,27 @@ gpt35_turbo = ChatOpenAI(
     max_tokens=4096,
     timeout=120,
     max_retries=3,
-    api_key=settings.OPENAI_API_KEY,
-    base_url=settings.OPENAI_BASE_URL,
+    api_key=settings.CHATANYWHERE_OPENAI_API_KEY,
+    base_url=settings.CHATANYWHERE_OPENAI_BASE_URL,
 )
 
+minimax_m27 = ChatOpenAI(
+    model="MiniMax-M2.7",
+    temperature=1.0,
+    max_tokens=4096,
+    timeout=120,
+    max_retries=3,
+    api_key=settings.MINIMAX_API_KEY,
+    base_url=settings.MINIMAX_BASE_URL,
+    # extra_body={"reasoning_split": True}  # 设置 reasoning_split=True 将思考内容分离到 reasoning_details 字段
+)
+
+# res = minimax_m27.invoke("你好啊，你是什么模型")
+# # res.pretty_print()
+# pprint(res)
+
 LLMs = {
+    "minimax-m2.7": minimax_m27,
     "gpt-5": gpt5,
     "gpt-5-mini": gpt5_mini,
     "gpt-5-nano": gpt5_nano,
@@ -104,7 +120,7 @@ LLMs = {
     "gpt-4.1-mini": gpt41_mini,
     "gpt-4.1-nano": gpt41_nano,
     "gpt-4o": gpt4o,
-    "gpt-4o-mini": gpt4o_mini,  # 全面碾压gpt-3.5-turbo
+    "gpt-4o-mini": gpt4o_mini,  # 性能、价格全面碾压gpt-3.5-turbo
     "gpt-3.5-turbo": gpt35_turbo,
 }
 
@@ -114,7 +130,6 @@ LLMs = {
 #     pprint(v.profile)
 
 """
-"D:\Python\VS Code WorkSpace\MAS_for_SD\.venv\Scripts\python.exe" "D:\Python\VS Code WorkSpace\MAS_for_SD\src\LangChain_LangGraph\langchain\my_langchain_utils.py" 
 ================================================
 gpt-5
 {

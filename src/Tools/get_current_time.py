@@ -8,3 +8,7 @@ def get_current_time():
     """
     import datetime
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+if __name__ == "__main__":
+    print(get_current_time.invoke(None))

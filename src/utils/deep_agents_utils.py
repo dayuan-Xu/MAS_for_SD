@@ -21,18 +21,29 @@ def get_human_decisions(input_interrupt: Interrupt) -> list[dict]:
         print(f"Tool: {action['name']}")
         print(f"Arguments: {action['args']}")
         print(f"Allowed decisions: {review_config['allowed_decisions']}")
-        decision_type = input("\nEnter your decision(approve/reject/edit) for this tool_call: ")
+        decision_type = input("\nEnter your decision('a'-approve/'r'-reject/'e'-edit) for this tool_call: ")
+        # 提高容错性，允许用户输入时大小写不敏感，并且去掉首尾空格
+        decision_type = decision_type.strip().lower()
 
-        if decision_type == "approve":
+        if decision_type == "approve" or decision_type == "a":
             user_decisions.append({"type": "approve"})
-        elif decision_type == "reject":
+        elif decision_type == "reject" or decision_type == "r":
             user_decisions.append({"type": "reject"})
-        elif decision_type == "edit":
+        elif decision_type == "edit" or decision_type == "e":
             new_args = {}
             for k in action["args"]:
                 new_arg_value = input(f"请为{k} = {action['args'][k]}提供一个新值:")
                 new_args[k] = new_arg_value
             user_decisions.append({"type": "edit", "edited_action": {"name": action["name"], "args": new_args}})
+        else:
+            print("无效的决策输入，默认做出的决定为reject")
+            user_decisions.append({"type": "reject"})
+
+    # 验证decisions数量与action_requests数量是否匹配
+    if len(user_decisions) != len(action_requests):
+        raise ValueError(
+            f"决策数量({len(user_decisions)})与待处理工具调用数量({len(action_requests)})不匹配！"
+        )
     return user_decisions
 
 
@@ -90,6 +101,7 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
                         "\n=========================================\n工具中断触发，需要人类干预，之后才能继续进行本轮ReAct循环\n")
                     interrupt = stream_part['interrupts'][0]
                     decisions = get_human_decisions(interrupt)
+
                     # Resume execution with decisions
                     agent_input = Command(resume={"decisions": decisions})
                     human_in_the_loop = True

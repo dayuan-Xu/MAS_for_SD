@@ -2,7 +2,7 @@ import uuid
 from typing import Literal, Annotated
 
 from deepagents import create_deep_agent, CompiledSubAgent
-from deepagents.backends import FilesystemBackend, LocalShellBackend
+from deepagents.backends import FilesystemBackend
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
@@ -14,15 +14,15 @@ from langgraph.types import Command
 from typing_extensions import NotRequired
 
 from src.Tools import internet_search, get_current_time
-from src.Virtual_SD_Team.manager import get_all_system_prompts
+from src.Virtual_SD_Team.fixed_local_shell_backend import FixedLocalShellBackend
+from src.Virtual_SD_Team.roles_prompt_manager import get_all_system_prompts
 from src.config.llm import LLMs
 from src.paths import DEEP_AGENT_WORKSPACE
-from src.utils.deep_agents_utils import multi_turn_conversation
 
 team_system_prompts = get_all_system_prompts()
 
 product_manager_graph = create_deep_agent(
-    model=LLMs["gpt-4o-mini"],
+    model=LLMs["minimax-m2.7"],
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["product_manager"],
     backend=FilesystemBackend(DEEP_AGENT_WORKSPACE, virtual_mode=True),
@@ -33,12 +33,12 @@ product_manager_graph = create_deep_agent(
 )
 product_manager_subagent = CompiledSubAgent(
     name="product_manager_subagent",
-    description="一名资深产品经理，可根据需求描述，产出一份产品需求文档。",
+    description="一名资深产品经理，可根据需求描述，交付一份产品需求文档。",
     runnable=product_manager_graph,
 )
 
 architect_graph = create_deep_agent(
-    model=LLMs["gpt-4o-mini"],
+    model=LLMs["minimax-m2.7"],
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["architect"],
     backend=FilesystemBackend(DEEP_AGENT_WORKSPACE, virtual_mode=True),
@@ -46,12 +46,12 @@ architect_graph = create_deep_agent(
 )
 architect_subagent = CompiledSubAgent(
     name="architect_subagent",
-    description="一名资深架构师，可根据需求，进行技术框架选型，产出软件架构设计文档。",
+    description="一名资深架构师，可根据产品需求文档，交付一份软件架构设计文档。",
     runnable=architect_graph,
 )
 
 project_manager_graph = create_deep_agent(
-    model=LLMs["gpt-5-mini"],
+    model=LLMs["minimax-m2.7"],
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["project_manager"],
     backend=FilesystemBackend(DEEP_AGENT_WORKSPACE, virtual_mode=True),
@@ -59,15 +59,16 @@ project_manager_graph = create_deep_agent(
 )
 project_manager_subagent = CompiledSubAgent(
     name="project_manager_subagent",
-    description="一名资深项目经理，负责软件系统的详细设计，产出详细的接口文档。",
+    description="一名资深项目经理，可根据软件架构设计文档，交付软件详细设计文档。",
     runnable=project_manager_graph,
 )
 
 engineer_graph = create_deep_agent(
-    model=LLMs["gpt-4o-mini"],
-    tools=[get_current_time, internet_search],
+    model=LLMs["minimax-m2.7"],
+    tools=[get_current_time, internet_search, ],
     system_prompt=team_system_prompts["engineer"],
-    backend=LocalShellBackend(root_dir=DEEP_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
+    checkpointer=True,  # 开启 checkpointer，作为子图运行时保存单线程内的消息历史。
+    backend=FixedLocalShellBackend(root_dir=DEEP_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
     interrupt_on={
         "execute": True,  # 为终端命令执行工具设置中断，如果虚拟文件系统是沙盒的话，可以不用指定interrupt_on，应该让智能体自由在沙盒中执行 execute 工具。
     },
@@ -75,15 +76,15 @@ engineer_graph = create_deep_agent(
 )
 engineer_subagent = CompiledSubAgent(
     name="engineer_subagent",
-    description="一名软件工程师，可根据明确的编码任务需求，产出功能性代码文件和测试代码文件，同时负责代码调试、单元测试、集成测试。",
+    description="一名软件工程师，可根据明确的编码任务需求，交付功能性代码文件和测试代码文件，同时完成代码调试、单元测试、集成测试。",
     runnable=engineer_graph,
 )
 
 QA_engineer_graph = create_deep_agent(
-    model=LLMs["gpt-4o-mini"],
+    model=LLMs["minimax-m2.7"],
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["QA_engineer"],
-    backend=LocalShellBackend(root_dir=DEEP_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
+    backend=FixedLocalShellBackend(root_dir=DEEP_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
     interrupt_on={
         "execute": True,  # 为终端命令执行工具设置中断，如果虚拟文件系统是沙盒的话，可以不用指定interrupt_on，应该让智能体自由在沙盒中执行 execute 工具。
     },
@@ -91,7 +92,7 @@ QA_engineer_graph = create_deep_agent(
 )
 QA_engineer_subagent = CompiledSubAgent(
     name="QA_engineer_subagent",
-    description="一名软件测试员，可对指定的软件项目进行系统测试，并给出测试报告。",
+    description="一名软件测试员，可对指定的软件项目进行系统测试，交付一份系统测试报告。",
     runnable=QA_engineer_graph,
 )
 
@@ -126,17 +127,17 @@ def update_dev_progress(current_iteration: int, current_iteration_stage: str, ru
 
 
 leader = create_deep_agent(
-    model=LLMs["gpt-5-mini"],
+    model=LLMs["minimax-m2.7"],
     tools=[get_current_time, update_dev_progress],
     system_prompt=team_system_prompts["team_leader"],
     middleware=[TeamLeaderMiddleware()],
     checkpointer=MemorySaver(),
-    backend=LocalShellBackend(root_dir=DEEP_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
+    backend=FixedLocalShellBackend(root_dir=DEEP_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
     interrupt_on={
         "execute": True,  # 为终端命令执行工具设置中断，如果虚拟文件系统是沙盒的话，可以不用指定interrupt_on，应该让智能体自由在沙盒中执行 execute 工具。
     },
     subagents=subagents,
-    skills=["/skills/solution-evaluation"],
+    skills=["/skills/deliverables-check"],
     name="Tim_Leader",
 )
 
@@ -147,6 +148,11 @@ run_config: RunnableConfig = {
 }
 
 if __name__ == "__main__":
+    from src.utils.deep_agents_utils import multi_turn_conversation
+
     # toy_game = """使用Python GUI开发一个简单的五子棋游戏。"""
 
     multi_turn_conversation(leader, run_config)
+    # 主派副智能体模式的缺点：
+    # 只有主智能体具备用户接口，用户无法干预副智能体。
+    # 虽然副智能体单独进行任务可以避免填充主智能体的上下文，但是主智能体也无法获知副智能体的真实发展状况，因而无法给予有效指导，尤其是当副智能体遇到复杂问题时。
