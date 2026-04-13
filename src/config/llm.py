@@ -1,4 +1,5 @@
 from langchain_openai import ChatOpenAI
+from rich.pretty import pprint
 
 from src.config.settings import settings
 
@@ -107,27 +108,33 @@ minimax_m27 = ChatOpenAI(
     # extra_body={"reasoning_split": True}  # 设置 reasoning_split=True 将思考内容分离到 reasoning_details 字段
 )
 
-# res = minimax_m27.invoke("你好啊，你是什么模型")
-# # res.pretty_print()
-# pprint(res)
+
+def test_minimax_m27():
+    res = minimax_m27.invoke("你好啊，你是什么模型")
+    # res.pretty_print()
+    pprint(res)
+
 
 LLMs = {
     "minimax-m2.7": minimax_m27,
-    "gpt-5": gpt5,
-    "gpt-5-mini": gpt5_mini,
-    "gpt-5-nano": gpt5_nano,
-    "gpt-4.1": gpt41,
-    "gpt-4.1-mini": gpt41_mini,
-    "gpt-4.1-nano": gpt41_nano,
-    "gpt-4o": gpt4o,
-    "gpt-4o-mini": gpt4o_mini,  # 性能、价格全面碾压gpt-3.5-turbo
-    "gpt-3.5-turbo": gpt35_turbo,
+    "gpt-5": gpt5,  # chatanywhere 免费支持一天5次
+    "gpt-5-mini": gpt5_mini,  # chatanywhere 免费支持一天200次
+    "gpt-5-nano": gpt5_nano,  # chatanywhere 免费支持一天200次
+    "gpt-4.1": gpt41,  # chatanywhere 免费支持一天5次
+    "gpt-4.1-mini": gpt41_mini,  # chatanywhere 免费支持一天200次
+    "gpt-4.1-nano": gpt41_nano,  # chatanywhere 免费支持一天200次
+    "gpt-4o": gpt4o,  # chatanywhere 免费支持一天5次
+    "gpt-4o-mini": gpt4o_mini,  # 性能、价格全面碾压gpt-3.5-turbo  # chatanywhere 免费支持一天200次
+    "gpt-3.5-turbo": gpt35_turbo,  # chatanywhere 免费支持一天200次
 }
 
-# for k, v in LLMs.items():
-#     print("================================================")
-#     print(k)
-#     pprint(v.profile)
+
+def show_LLMs_profile():
+    for k, v in LLMs.items():
+        print("================================================")
+        print(k)
+        pprint(v.profile)
+
 
 """
 ================================================

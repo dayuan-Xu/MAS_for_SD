@@ -54,18 +54,19 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
     支持父图、子图人在循环发生时收集人类反馈。
     """
 
-    last_output_msg = None
+    printed_msg_ids = set()  # 用于记录已经输出过的消息id，避免重复输出
     while True:
         # 第一次用户输入；或者上个ReAct循环完整结束后，等待用户新输入令。
-        input_text = input("\n=========================================\n请用户输入：")
+        print("\n" + "=" * 41 + " ✨请用户输入新消息 " + "=" * 41 + "\n")
+        input_text = input("Your input (or type 'exit' to quit): ")
 
         if input_text == "exit":
-            print("\n用户输入了exit，结束多轮对话。")
+            print("\n" + "=" * 41 + " 👟用户输入了exit，结束多轮对话 " + "=" * 41 + "\n")
             break
 
         agent_input = {"messages": [{"role": "user", "content": input_text}]}
 
-        print("\n=========================================\n下面开启全新的一轮ReAct循环\n")
+        print("\n" + "=" * 41 + " 💡下面开启全新的一轮ReAct循环 " + "=" * 41 + "\n")
         human_in_the_loop = False  # 每次开始前默认没发生人在循环
         current_loop_ends_totally = False  # 每次开始前默认本次ReAct没有完整结束
 
@@ -98,7 +99,7 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
                 if stream_part['interrupts']:
                     # 如果真需要人类参与
                     print(
-                        "\n=========================================\n工具中断触发，需要人类干预，之后才能继续进行本轮ReAct循环\n")
+                        "\n" + "=" * 41 + " 🕵️‍♀️人在循环：工具触发中断，需要人类干预，之后才能继续进行本轮ReAct循环 " + "=" * 41 + "\n")
                     interrupt = stream_part['interrupts'][0]
                     decisions = get_human_decisions(interrupt)
 
@@ -110,31 +111,28 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
 
                 namespace = stream_part["ns"]
                 data = stream_part["data"]
-                latest_message = data["messages"][-1]
+                messages = data["messages"]
 
-                if last_output_msg is None:
-                    # 只会执行一次，用于打印第一个消息
-                    latest_message.pretty_print()
-                    last_output_msg = latest_message
-                elif latest_message.id != last_output_msg.id:
-                    # 只用于打印图的或子图的新产出消息
-                    if namespace:
-                        # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（新消息），
-                        # 比如是 'tools:5927c259-58a6-e7bb-c9fe-0c051e90c825'
-                        print("\n================================== 下面这条消息是子图的新消息\n")
-                    latest_message.pretty_print()
-                    last_output_msg = latest_message
-
+                # 遍历所有消息，而不是只取最后一条
+                # 这样可以确保不会漏掉任何新产生的消息（特别是并发工具调用后的多个Tool Message）
+                for msg in messages:
+                    if msg.id not in printed_msg_ids:
+                        # 只打印之前没打印过的新消息
+                        if namespace:
+                            # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（新消息），
+                            # 比如是 'tools:5927c259-58a6-e7bb-c9fe-0c051e90c825'
+                            print("\n", "=" * 33, "⚠下面这条消息是子图的新消息\n")
+                        msg.pretty_print()
+                        printed_msg_ids.add(msg.id)
             # 判断本次ReAct循环是否完整地结束了
             if human_in_the_loop:
                 # 不是完整地结束
-                print(
-                    "\n=========================================\n发生了人在循环，已经收集到人类干预，继续进行本轮ReAct循环\n")
+                print("\n" + "=" * 40 + " 👌发生了人在循环，已经收集到人类干预，继续进行本轮ReAct循环\n")
                 human_in_the_loop = False  # 继续进行本轮ReAct循环前，恢复默认值
                 continue
             else:
                 # 说明是完整地结束
-                print("\n=========================================\n本轮ReAct循环圆满结束\n")
+                print("\n", "=" * 41, "本轮ReAct循环圆满结束", "=" * 41, "\n")
                 current_loop_ends_totally = True
 
-    print("多轮对话成功结束。")
+    print("\n", "=" * 41, "✋多轮对话成功结束", "=" * 41, "\n")

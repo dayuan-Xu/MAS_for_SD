@@ -1,0 +1,22 @@
+name: AI助手项目
+owner:
+  name: 张三
+  age: 30
+  email: zhangsan@example.com
+  skills:
+  - Python
+  - JavaScript
+members:
+- name: 李四
+  age: 25
+  email: lisi@example.com
+  skills:
+  - Java
+  - Go
+- name: 王五
+  age: 28
+  email: wangwu@example.com
+  skills:
+  - Python
+  - C++
+status: in_progress

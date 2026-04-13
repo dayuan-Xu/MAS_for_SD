@@ -48,5 +48,5 @@ htmlcov/
 *.sqlite3
 
 
-/DeepAgent_workspace/
+/agent_workspace/
 /.langgraph_api/
