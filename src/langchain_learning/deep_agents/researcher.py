@@ -8,7 +8,6 @@
 
 """
 import uuid
-
 from deepagents import create_deep_agent, CompiledSubAgent
 from deepagents.backends import FilesystemBackend
 from langchain_core.runnables import RunnableConfig
@@ -16,8 +15,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from src.Tools import get_weather_at_location
 from src.config.llm import LLMs
-from src.paths import AGENT_WORKSPACE
-from src.utils.deep_agents_utils import multi_turn_conversation
+from src.paths import LOCAL_AGENT_WORKSPACE
+from src.utils.graph_running_utils import multi_turn_conversation
 
 weather_agent = create_deep_agent(
     model=LLMs["gpt-4o-mini"],
@@ -85,7 +84,7 @@ researcher_agent = create_deep_agent(
     # tools=[internet_search],
     system_prompt=research_instructions,
     checkpointer=checkpointer,  # 用于保存图state，进而实现多轮对话 + 人在循环。检查器的实现可以基于内存，也可以基于持久化数据库。
-    backend=FilesystemBackend(root_dir=AGENT_WORKSPACE, virtual_mode=True),
+    backend=FilesystemBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True),
     # interrupt_on={
     #     "internet_search": True,
     # },

@@ -1,17 +1,70 @@
-"""修复 Windows 编码问题的 LocalShellBackend"""
+"""修复 Windows 编码问题和路径验证问题的 LocalShellBackend"""
 import platform
 import subprocess
+from pathlib import Path
 
 from deepagents.backends import LocalShellBackend
 from deepagents.backends.protocol import ExecuteResponse
 
 
 class FixedLocalShellBackend(LocalShellBackend):
-    """修复 Windows 下 subprocess 编码问题的 Backend
+    """修复 Windows 下 subprocess 编码和路径验证问题的 Backend
     
-    重写 execute 方法，强制使用 UTF-8 编码解码子进程输出，
-    避免 Windows 中文系统下 GBK 解码导致的 UnicodeDecodeError。
+    1. 重写 execute 方法，强制使用 UTF-8 编码解码子进程输出，
+       避免 Windows 中文系统下 GBK 解码导致的 UnicodeDecodeError。
+    2. 重写 _resolve_path 方法，处理 Windows 长路径前缀（\\?\）问题，
+       确保虚拟路径验证时不会因为路径格式不一致导致失败。
     """
+
+    def _resolve_path(self, key: str) -> Path:
+        """重写父类方法，处理 Windows 长路径前缀问题
+        
+        Windows 上 Path.resolve() 可能返回带 \\?\ 前缀的路径，
+        而 self.cwd 没有此前缀，导致 relative_to() 比较失败。
+        此方法统一处理两种路径格式的比较。
+        
+        Args:
+            key: 文件路径（绝对、相对或虚拟路径）
+            
+        Returns:
+            解析后的绝对 Path 对象
+            
+        Raises:
+            ValueError: 如果尝试路径遍历或路径超出 root_dir 范围
+        """
+        if self.virtual_mode:
+            vpath = key if key.startswith("/") else "/" + key
+            if ".." in vpath or vpath.startswith("~"):
+                msg = "Path traversal not allowed"
+                raise ValueError(msg)
+            full = (self.cwd / vpath.lstrip("/")).resolve()
+            
+            # 处理 Windows 长路径前缀问题
+            try:
+                full.relative_to(self.cwd)
+            except ValueError:
+                # 可能是由于 \\?\ 前缀导致的比较失败
+                full_str = str(full)
+                cwd_str = str(self.cwd)
+                
+                # 如果 full 有 \\?\ 前缀而 cwd 没有，尝试规范化后再次比较
+                if full_str.startswith("\\\\?\\") and not cwd_str.startswith("\\\\?\\"):
+                    full_normalized = Path(full_str[4:])
+                    try:
+                        full_normalized.relative_to(self.cwd)
+                        return full  # 验证通过，返回原始路径
+                    except ValueError:
+                        pass
+                
+                # 如果仍然失败，抛出原始错误
+                msg = f"Path:{full} outside root directory: {self.cwd}"
+                raise ValueError(msg) from None
+            return full
+
+        path = Path(key)
+        if path.is_absolute():
+            return path
+        return (self.cwd / path).resolve()
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
         """重写 execute 方法，强制使用 UTF-8 编码

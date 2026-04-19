@@ -1,5 +1,5 @@
-name: software_dev_11
-description: The 11 tasks of MetaGPT SoftwareDev Dataset"
+name: "software_dev_11"
+description: "The 11 tasks of MetaGPT SoftwareDev Dataset"
 tasks:
   - number: 0
     name: "Snake game"

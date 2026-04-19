@@ -5,7 +5,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from rich.pretty import pprint
 
 from src.config.llm import LLMs
-from src.paths import AGENT_WORKSPACE
+from src.paths import LOCAL_AGENT_WORKSPACE
 
 
 @tool
@@ -38,7 +38,7 @@ agent = create_deep_agent(
         "send_email": {"allowed_decisions": ["approve", "reject"]},  # No editing
     },
     checkpointer=checkpointer,  # Required!
-    backend=FilesystemBackend(root_dir=AGENT_WORKSPACE, virtual_mode=True),
+    backend=FilesystemBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True),
 )
 
 import uuid

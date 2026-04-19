@@ -1,6 +1,4 @@
 import uuid
-from typing import Literal, Annotated
-
 from deepagents import create_deep_agent, CompiledSubAgent
 from deepagents.backends import FilesystemBackend
 from langchain.agents import AgentState
@@ -11,11 +9,12 @@ from langchain_core.tools import tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolRuntime
 from langgraph.types import Command
+from typing import Literal, Annotated
 from typing_extensions import NotRequired
 
 from src.Tools import internet_search, get_current_time
 from src.config.llm import LLMs
-from src.paths import AGENT_WORKSPACE
+from src.paths import LOCAL_AGENT_WORKSPACE
 from src.utils.fixed_local_shell_backend import FixedLocalShellBackend
 from src.utils.roles_prompt_manager import get_all_system_prompts
 
@@ -25,7 +24,7 @@ product_manager_graph = create_deep_agent(
     model=LLMs["minimax-m2.7"],
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["product_manager"],
-    backend=FilesystemBackend(AGENT_WORKSPACE, virtual_mode=True),
+    backend=FilesystemBackend(LOCAL_AGENT_WORKSPACE, virtual_mode=True),
     interrupt_on={
         "internet_search": True,
     },
@@ -41,7 +40,7 @@ architect_graph = create_deep_agent(
     model=LLMs["minimax-m2.7"],
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["architect"],
-    backend=FilesystemBackend(AGENT_WORKSPACE, virtual_mode=True),
+    backend=FilesystemBackend(LOCAL_AGENT_WORKSPACE, virtual_mode=True),
     name="Bob_Architect"
 )
 architect_subagent = CompiledSubAgent(
@@ -54,7 +53,7 @@ project_manager_graph = create_deep_agent(
     model=LLMs["minimax-m2.7"],
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["project_manager"],
-    backend=FilesystemBackend(AGENT_WORKSPACE, virtual_mode=True),
+    backend=FilesystemBackend(LOCAL_AGENT_WORKSPACE, virtual_mode=True),
     name="Cindy_ProjectManager"
 )
 project_manager_subagent = CompiledSubAgent(
@@ -68,7 +67,7 @@ engineer_graph = create_deep_agent(
     tools=[get_current_time, internet_search, ],
     system_prompt=team_system_prompts["engineer"],
     checkpointer=True,  # 开启 checkpointer，作为子图运行时保存单线程内的消息历史。
-    backend=FixedLocalShellBackend(root_dir=AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
+    backend=FixedLocalShellBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
     interrupt_on={
         "execute": True,  # 为终端命令执行工具设置中断，如果虚拟文件系统是沙盒的话，可以不用指定interrupt_on，应该让智能体自由在沙盒中执行 execute 工具。
     },
@@ -85,7 +84,7 @@ QA_engineer_graph = create_deep_agent(
     model=LLMs["minimax-m2.7"],
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["QA_engineer"],
-    backend=FixedLocalShellBackend(root_dir=AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
+    backend=FixedLocalShellBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
     interrupt_on={
         "execute": True,  # 为终端命令执行工具设置中断，如果虚拟文件系统是沙盒的话，可以不用指定interrupt_on，应该让智能体自由在沙盒中执行 execute 工具。
     },
@@ -133,7 +132,7 @@ leader = create_deep_agent(
     system_prompt=team_system_prompts["team_leader"],
     middleware=[TeamLeaderMiddleware()],
     checkpointer=MemorySaver(),
-    backend=FixedLocalShellBackend(root_dir=AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
+    backend=FixedLocalShellBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
     interrupt_on={
         "execute": True,  # 为终端命令执行工具设置中断，如果虚拟文件系统是沙盒的话，可以不用指定interrupt_on，应该让智能体自由在沙盒中执行 execute 工具。
     },
@@ -149,7 +148,7 @@ run_config: RunnableConfig = {
 }
 
 if __name__ == "__main__":
-    from src.utils.deep_agents_utils import multi_turn_conversation
+    from src.utils.graph_running_utils import multi_turn_conversation
 
     # toy_game = """使用Python GUI开发一个简单的五子棋游戏。"""
 

@@ -19,14 +19,20 @@ MY_FILE_SYSTEM_MIDDLEWARE_SYSTEM_PROMPT = """## 遵循规范
 - 编辑文件前先阅读内容——在修改前理解文件现有内容。
 - 模仿项目现有风格、命名规范与代码模式。
 
-## 文件系统工具 `ls`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`
+## 虚拟文件系统工具 `ls`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`
 
-你可通过以下工具与文件系统进行交互。
-所有文件路径必须以 `/` 开头。按照工具文档使用对应功能，读取大文件时请使用分页（偏移量/限制数）。
+你可通过以下工具与一个虚拟文件系统进行交互。
+已知该虚拟文件系统底层基于宿主机真实文件系统的某个目录（如 windows下的`D:/agentworkspace/`、linux下的`/users/one_normal_user/agentworkspace/`）。
+在使用以下工具时，出于工具的具体实现，传入的所有文件路径必须以 `/` 开头。
+按照工具文档使用对应功能，读取大文件时请使用分页（偏移量/限制数）。
 
 - ls：列出目录下的文件（需传入绝对路径）
 - read_file：从文件系统读取文件
 - write_file：向文件系统中写入新文件（不能向已有文件中写入）
+  - **长文档分段写入策略（可选）**：当文档预计超过 4000 tokens 时，不必通过调用一次write_file一次性写入全部内容，而是可以分段写入：
+    - 第1次：创建文件 + YAML元数据 + 完整目录结构
+    - 后续：使用 `edit_file` 逐章填充内容（每次 1-2 章，控制在 2000 tokens 内）
+    - 适用文档：《产品需求.md》《系统概要设计.md》《系统详细设计.md》《系统测试报告.md》
 - edit_file：编辑文件系统中的文件
 - glob：查找匹配指定模式的文件（如 `"**/*.py"`）
 - grep：在文件内搜索文本内容
@@ -54,10 +60,11 @@ MY_EXECUTE_TOOL_DESCRIPTION = """## 执行工具`execute`
 
 - **⚠️调用execute工具执行shell命令时的铁律**：
 
-    - **文件系统工具**（`ls`、`read_file`、`write_file` 等）：可以使用绝对路径 `/warehouse/...`
+    - **虚拟文件系统工具**（`ls`、`read_file`、`write_file` 等）：出于工具的具体实现，可以使用绝对路径 `/warehouse/...`，这是**特殊情况**
     - **execute 工具**（执行 shell 命令）：**命令中绝对不能**使用以 `/` 开头的绝对路径，必须使用**相对路径**
 
-    - **为什么？**execute 工具最终启动的shell终端的工作目录是虚拟文件系统根目录 `/`，但它映射到真实文件系统的某个目录。如果你使用 `/warehouse/...`，系统会尝试访问真实文件系统的根目录下的 warehouse，这会导致"文件未找到"错误
+    - **为什么？**execute 工具最终会启动一个shell终端执行命令，其工作目录是虚拟文件系统根目录，它映射到真实文件系统的某个目录，比如`D:/agentworkspace/`（windows）、`/users/normal_user/agentworkspace/`（linux）。
+    如果你在命令中使用 `/warehouse/...`等以 `/` 开头的绝对路径，系统会尝试访问宿主机真实文件系统的根目录或盘根目录下的 warehouse，这很可能会导致"文件未找到"错误
     - 示例：
         - ✅ 正确：`cd "./warehouse/gomoku_game_v1_2026-04-07_10-00/gomoku/tests" && python -m pytest ./ -v`
         - ✅ 正确：`python -m pytest "warehouse/gomoku_game_v1_2026-04-07_10-00/gomoku/tests/test_pytest.py" -v`
@@ -107,7 +114,7 @@ MY_TASK_TOOL_DESCRIPTION = """调用该工具指派团队成员完成特定任�
 
 1. 开发类型：绿地开发or棕地开发
 2. 当前项目工作空间
-3. 本次任务要求，力求简洁，不具体要求文档交付物的内容，比如：
+3. 本次任务要求，力求简洁。不必向你的团队专家指明文档交付物应该包含内容，因为每个团队成员都是专业的。比如：
     - 请进行{{当前任务：比如需求分析、架构设计、系统测试}}，交付《{{文档名：当前文档交付物名称}}.md》
     - 请创建/实现/编写{{filename}}，完成/实现{{coding_task_description：当前编码任务在详细设计文档中的描述}}。
 4. 交付物保存地址"""

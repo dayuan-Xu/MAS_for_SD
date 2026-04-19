@@ -57,7 +57,7 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
     printed_msg_ids = set()  # 用于记录已经输出过的消息id，避免重复输出
     while True:
         # 第一次用户输入；或者上个ReAct循环完整结束后，等待用户新输入令。
-        print("\n" + "=" * 41 + " ✨请用户输入新消息 " + "=" * 41 + "\n")
+
         input_text = input("Your input (or type 'exit' to quit): ")
 
         if input_text == "exit":
@@ -121,7 +121,7 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
                         if namespace:
                             # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（新消息），
                             # 比如是 'tools:5927c259-58a6-e7bb-c9fe-0c051e90c825'
-                            print("\n", "=" * 33, "⚠下面这条消息是子图的新消息\n")
+                            print("\n" + "=" * 33 + "👇 下面这条消息是子图的新消息\n")
                         msg.pretty_print()
                         printed_msg_ids.add(msg.id)
             # 判断本次ReAct循环是否完整地结束了
@@ -136,3 +136,23 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
                 current_loop_ends_totally = True
 
     print("\n", "=" * 41, "✋多轮对话成功结束", "=" * 41, "\n")
+
+
+def end_to_end_dev(run_config: RunnableConfig, original_software_requirement: str):
+    """
+    端到端软件开发，一句需求输出一个可运行的软件。
+    软件开发过程中不要求用户额外指导，智能体开发团队能够完成自主软件开发和软件测试运行。
+    软件开发团队应该具备独立的系统沙盒作为工作空间，创建项目环境，安装项目依赖，运行项目代码，测试和维护。
+    软件开发团队也可以具备浏览器沙盒，能够渲染项目中的网页，以便反馈前端的代码开发。
+    :param run_config:  运行时配置
+    :param original_software_requirement:  用户原始的软件开发需求，一句话即可
+    :return: None
+    """
+    from src.agent_based_dev_team.leader_agent import leader
+
+    # 智能体团队，可由一个主智能体（编排者）代表，不应该存在任何HITL的配置打断智能体团队的运行。
+    agent = leader
+
+    agent_input = {"messages": [{"role": "user", "content": original_software_requirement}]}
+    agent.invoke(input=agent_input, config=run_config)
+    return None

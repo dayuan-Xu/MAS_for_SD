@@ -1,4 +1,4 @@
-name: software_dev_7
+name: "software_dev_7"
 description: "The 7 tasks MetaGPT SoftwareDev Dataset"
 tasks:
   - number: 0

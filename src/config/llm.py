@@ -100,9 +100,9 @@ gpt35_turbo = ChatOpenAI(
 minimax_m27 = ChatOpenAI(
     model="MiniMax-M2.7",
     temperature=1.0,
-    max_tokens=4096,
-    timeout=120,
-    max_retries=3,
+    # max_tokens=4096,  # 直接省略，"让模型自己决定用多少"
+    timeout=180,  # 增加到 180 秒，给 MiniMax 更多响应时间
+    max_retries=5,  # 增加到 5 次，配合 RetryMiddleware 使用
     api_key=settings.MINIMAX_API_KEY,
     base_url=settings.MINIMAX_BASE_URL,
     # extra_body={"reasoning_split": True}  # 设置 reasoning_split=True 将思考内容分离到 reasoning_details 字段

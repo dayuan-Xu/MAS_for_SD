@@ -7,15 +7,14 @@
 
 """
 import uuid
-from typing import cast
-
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command, StreamPart
+from typing import cast
 
 from src.config.llm import LLMs
-from src.paths import AGENT_WORKSPACE
+from src.paths import LOCAL_AGENT_WORKSPACE
 
 # 首先利用LangChain Deep Agents框架构建第一个和最重要的智能体：编码人员智能体Engineer
 engineer_instructions = ("你是一名资深软件开发工程师。"
@@ -63,7 +62,7 @@ agent = create_deep_agent(
     tools=[],
     system_prompt=engineer_instructions,
     checkpointer=checkpointer,
-    backend=LocalShellBackend(root_dir=AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
+    backend=LocalShellBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True),
     # 注意，要继承父进程的全部环境变量，inherit_env=True，智能体输入shell中的命令才能正确执行。
     interrupt_on={
         "execute": True,  # 为终端命令执行工具设置中断，如果虚拟文件系统是沙盒的话，可以不用指定interrupt_on，应该让智能体自由在沙盒中执行 execute 工具。

@@ -11,7 +11,7 @@ from deepagents.backends import FilesystemBackend
 
 from src.Tools import internet_search, get_weather_at_location
 from src.config.llm import LLMs
-from src.paths import AGENT_WORKSPACE
+from src.paths import LOCAL_AGENT_WORKSPACE
 
 # 为了隔离详细工作并避免主智能体的上下文膨胀，可以使用子代理
 # 第一种方式是 基于字典的自定义副智能体dict-based SubAgent，类型是DeepAgent
@@ -39,7 +39,7 @@ subagents = [research_subagent, weather_subagent]
 main_agent = create_deep_agent(
     model=LLMs["gpt-5-mini"],
     system_prompt="你是一个团队领导，你直面用户的复杂需求。你知人善任，擅长复杂任务的高层规划调度，你并不会事事亲历亲为，而是委派团队成员完成任务。",
-    backend=FilesystemBackend(root_dir=AGENT_WORKSPACE, virtual_mode=True),
+    backend=FilesystemBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True),
     subagents=subagents,
     name="团队领导",
 )

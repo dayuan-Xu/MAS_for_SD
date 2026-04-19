@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "多智能体软件开发"
     DEBUG: bool = True
     DATABASE_URL: str = "sqlite:///test.db"
+    USE_PAID_LLM_API: bool = False
     CHATANYWHERE_OPENAI_API_KEY: str = ""
     CHATANYWHERE_OPENAI_BASE_URL: str = ""
     # MINIMAX_GROUP_ID: str = ""
@@ -37,6 +38,14 @@ class Settings(BaseSettings):
     LANGSMITH_ENDPOINT: str = ""
     LANGSMITH_API_KEY: str = ""
     LANGSMITH_PROJECT: str = ""
+    USE_POSTGRES_CHECKPOINTER_FIRST_TIME: bool = True
+    POSTGRES_DB_USER: str = "postgres"
+    POSTGRES_DB_PASSWORD: str = "postgres"
+    POSTGRES_DB_HOST: str = "localhost"
+    POSTGRES_DB_PORT: int = 5442
+    POSTGRES_DB_NAME: str = "postgres"
+    POSTGRES_DB_SSL_MODE: str = "disable"
+    WUYING_AGENTBAY_API_KEY: str = ""
     TAVILY_API_KEY: str = ""
     POSTGRESQL_URL: str = ""
     JAVA_HOME: str = ""
@@ -51,7 +60,9 @@ class Settings(BaseSettings):
 
 # 🔥 全局唯一单例（整个项目只创建这一个对象）
 settings = Settings()
-print("\n全局静态配置settings已加载！")
+print("\n全局静态配置settings已加载！当前LLM API配置：" + "minimax" if settings.USE_PAID_LLM_API else "chatanywhere")
+
+# pprint(settings.model_dump())
 
 # 加载LangSmith相关配置到环境变量
 import os

@@ -80,7 +80,7 @@ config: RunnableConfig = {"configurable": {
     "thread_id": str(uuid.uuid4())
 }}
 if __name__ == "__main__":
-    from src.utils.deep_agents_utils import multi_turn_conversation
+    from src.utils.graph_running_utils import multi_turn_conversation
 
     multi_turn_conversation(main_agent, config)
 

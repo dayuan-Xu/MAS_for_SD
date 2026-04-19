@@ -38,14 +38,14 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from src.config.llm import LLMs
-from src.paths import AGENT_WORKSPACE
+from src.paths import LOCAL_AGENT_WORKSPACE
 
 # Checkpointer is REQUIRED for human-in-the-loop
 checkpointer = MemorySaver()
 
 agent = create_deep_agent(
     model=LLMs["minimax-m2.7"],
-    backend=FilesystemBackend(root_dir=AGENT_WORKSPACE, virtual_mode=True),
+    backend=FilesystemBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True),
     skills=["/skills/"],
     memory=[],
     interrupt_on={
