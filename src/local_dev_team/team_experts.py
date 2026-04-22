@@ -1,13 +1,12 @@
 from deepagents import create_deep_agent, CompiledSubAgent
-from deepagents.backends import FilesystemBackend
 
 from src.Tools import internet_search, get_current_time
-from src.agent_based_dev_team.QA_engineer import QA_engineer_subagent
-from src.agent_based_dev_team.engineer_agent import engineer_subagent
-from src.agent_based_dev_team.shared_middleware import shared_retry_middleware
 from src.config.llm import LLMs
 from src.config.settings import settings
-from src.paths import LOCAL_AGENT_WORKSPACE, AGENT_SYSTEM_PROMPTS_FILES
+from src.local_dev_team.QA_engineer import QA_engineer_subagent
+from src.local_dev_team.engineer_agent import engineer_subagent
+from src.local_dev_team.shared_middleware import retry_middleware, my_local_backend
+from src.paths import AGENT_SYSTEM_PROMPTS_FILES
 from src.utils.roles_prompt_manager import get_system_prompts_for_roles
 
 team_system_prompts = get_system_prompts_for_roles(("product_manager", "architect", "project_manager", "QA_engineer"),
@@ -19,13 +18,13 @@ product_manager_graph = create_deep_agent(
     model=llm,
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["product_manager"],
-    middleware=[shared_retry_middleware],
-    backend=FilesystemBackend(LOCAL_AGENT_WORKSPACE, virtual_mode=True),
+    middleware=[retry_middleware],
+    backend=my_local_backend,
     name="Alice_ProductManager"
 )
 product_manager_subagent = CompiledSubAgent(
     name="Alice",
-    description="一名资深产品经理，可根据需求描述，交付一份产品需求文档。",
+    description="一名产品经理，可根据需求描述，交付一份产品需求文档。",
     runnable=product_manager_graph,
 )
 
@@ -33,13 +32,13 @@ architect_graph = create_deep_agent(
     model=llm,
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["architect"],
-    middleware=[shared_retry_middleware],
-    backend=FilesystemBackend(LOCAL_AGENT_WORKSPACE, virtual_mode=True),
+    middleware=[retry_middleware],
+    backend=my_local_backend,
     name="Bob_Architect"
 )
 architect_subagent = CompiledSubAgent(
-    name="Bod",
-    description="一名资深架构师，可根据产品需求文档，交付一份软件架构设计文档。",
+    name="Bob",
+    description="一名架构师，可根据产品需求文档，交付一份软件架构设计文档。",
     runnable=architect_graph,
 )
 
@@ -47,13 +46,13 @@ project_manager_graph = create_deep_agent(
     model=llm,
     tools=[get_current_time, internet_search],
     system_prompt=team_system_prompts["project_manager"],
-    middleware=[shared_retry_middleware],
-    backend=FilesystemBackend(LOCAL_AGENT_WORKSPACE, virtual_mode=True),
-    name="Cindy_ProjectManager"
+    middleware=[retry_middleware],
+    backend=my_local_backend,
+    name="Cindy_ProjectManager"  # langchain在给AIMessage添加name属性时使用
 )
 project_manager_subagent = CompiledSubAgent(
-    name="Cindy",
-    description="一名资深项目经理，可根据软件架构设计文档，交付软件详细设计文档。",
+    name="Cindy",  # SubAgentMiddleware在注入系统提示词时使用
+    description="一名项目经理，可根据软件架构设计文档，交付软件详细设计文档。",
     runnable=project_manager_graph,
 )
 

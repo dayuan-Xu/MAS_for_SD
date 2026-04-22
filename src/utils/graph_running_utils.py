@@ -1,8 +1,10 @@
-from typing import cast
-
+from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Interrupt, Command, StreamPart
+from typing import cast
+
+from src.agentbay_based_dev_team.leader import leader
 
 
 def get_human_decisions(input_interrupt: Interrupt) -> list[dict]:
@@ -47,6 +49,7 @@ def get_human_decisions(input_interrupt: Interrupt) -> list[dict]:
     return user_decisions
 
 
+# 运行给定的LangGraph，支持多轮对话（即每次人类输入引发一次ReAct循环，可以有多次人类对话直至人类输入exit）
 def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfig):
     """
     为DeepAgent设计的多轮对话，
@@ -138,21 +141,87 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
     print("\n", "=" * 41, "✋多轮对话成功结束", "=" * 41, "\n")
 
 
-def end_to_end_dev(run_config: RunnableConfig, original_software_requirement: str):
-    """
-    端到端软件开发，一句需求输出一个可运行的软件。
-    软件开发过程中不要求用户额外指导，智能体开发团队能够完成自主软件开发和软件测试运行。
-    软件开发团队应该具备独立的系统沙盒作为工作空间，创建项目环境，安装项目依赖，运行项目代码，测试和维护。
-    软件开发团队也可以具备浏览器沙盒，能够渲染项目中的网页，以便反馈前端的代码开发。
-    :param run_config:  运行时配置
-    :param original_software_requirement:  用户原始的软件开发需求，一句话即可
-    :return: None
-    """
-    from src.agent_based_dev_team.leader_agent import leader
+# 端到端软件开发
+TASK_DONE_IDENTIFIER = "TASK_DONE"
+MAX_REACT_LOOP_COUNT = 5  # dev_team最多运行5次
 
-    # 智能体团队，可由一个主智能体（编排者）代表，不应该存在任何HITL的配置打断智能体团队的运行。
+
+def is_task_done(msg: AIMessage):
+    content = msg.content
+    # 情况1：纯字符串
+    if isinstance(content, str):
+        return TASK_DONE_IDENTIFIER in content
+
+    # 情况2：列表类型
+    if isinstance(content, list):
+        for item in content:
+            # 子项是字符串
+            if isinstance(item, str):
+                if TASK_DONE_IDENTIFIER in item:
+                    return True
+            # 子项是字典（OpenAI 消息格式）
+            elif isinstance(item, dict):
+                if item.get("type") == "text":
+                    text_content = item.get("text", "")
+                    if TASK_DONE_IDENTIFIER in text_content:
+                        return True
+                # 处理其他类型的 content（如 image_url 等）
+                elif item.get("type"):
+                    print(f"[yellow]⚠ 跳过非文本内容类型: {item.get('type')}[/yellow]")
+
+    return False
+
+
+def multi_turn_conversation_with_fixed_human_input(config_across_runs: RunnableConfig, task_description: str):
+    """
+    基于agentbay_based_dev_team的端到端软件开发
+    """
+    task_name = config_across_runs["tags"][0]
     agent = leader
+    input_text = None
+    react_loop_count = 1
+    latest_AI_message: AIMessage | None = None
 
-    agent_input = {"messages": [{"role": "user", "content": original_software_requirement}]}
-    agent.invoke(input=agent_input, config=run_config)
-    return None
+    while True:
+        # 第一次用户输入
+        if input_text is None:
+            input_text = f"针对一个软件需求完成端到端开发，禁止请求任何用户反馈。\n需求描述如下：\n{task_description}"
+        else:
+            # 或者上个ReAct循环结束后，等待用户本轮输入
+            react_loop_count = react_loop_count + 1
+            if latest_AI_message and is_task_done(latest_AI_message):
+                print("\n" + "=" * 41 + f" ✅ 输出{TASK_DONE_IDENTIFIER}，dev_team认为软件已经可交付!" + "=" * 41 + "\n")
+                break
+
+            if react_loop_count > MAX_REACT_LOOP_COUNT:
+                print(
+                    "\n" + "=" * 41 + f" ❌ dev_team已经运行了{MAX_REACT_LOOP_COUNT}轮ReAct循环，失败退出！" + "=" * 41 + "\n")
+                break
+
+            input_text = f"用户无暇亲临指导，请确保软件符合原始需求并可交付，否则继续开发。若当前软件已可交付则仅仅回复'{TASK_DONE_IDENTIFIER}'"
+
+        agent_input = {"messages": [{"role": "user", "content": input_text}]}
+
+        print("\n" + "=" * 41 + f" 💡 下面开启一轮ReAct循环 {task_name}_{react_loop_count} " + "=" * 41 + "\n")
+
+        run_config = {
+            **config_across_runs,
+            "run_name": f'{task_name}_{react_loop_count}'
+        }
+
+        for stream_part in agent.stream(input=agent_input, config=run_config, stream_mode=["values"],
+                                        subgraphs=True, version="v2"):
+            # values流式输出模式下，streamPart对象是ValuesStreamPart类型,包含type、ns、data、interrupts三个key
+            stream_part = cast(StreamPart, stream_part)
+
+            data = stream_part["data"]
+            messages = data["messages"]
+
+            # 取最新AIMessage
+            latest_msg = messages[-1]
+            if latest_AI_message is None:
+                latest_AI_message = latest_msg
+                continue
+
+            if isinstance(latest_msg, AIMessage) and latest_msg.id != latest_AI_message.id:
+                latest_AI_message = latest_AI_message

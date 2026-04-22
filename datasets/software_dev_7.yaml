@@ -3,35 +3,42 @@ description: "The 7 tasks MetaGPT SoftwareDev Dataset"
 tasks:
   - number: 0
     name: "Snake game"
+    name_CN: "贪吃蛇游戏"
     description: "Create a snake game."
     description_CN: "创建一个贪吃蛇游戏。"
 
   - number: 1
     name: "Brick breaker game"
+    name_CN: "打砖块游戏"
     description: "Create a brick breaker game."
     description_CN: "创建一个打砖块游戏。"
 
   - number: 2
     name: "2048 game"
+    name_CN: "2048游戏"
     description: "Create a 2048 game for the web."
     description_CN: "开发一款网页版2048游戏。"
 
   - number: 3
     name: "Flappy bird game"
+    name_CN: "Flappy Bird游戏"
     description: "Write p5.js code for Flappy Bird where you control a yellow bird continuously flying between a series of green pipes. The bird flaps every time you left click the mouse. If it falls to the ground or hits a pipe, you lose. This game goes on indefinitely until you lose; you get points the further you go."
     description_CN: "编写Flappy Bird的p5.js代码，操控一只黄色小鸟在一系列绿色管道之间持续飞行。每次点击鼠标左键，小鸟就会扇动翅膀。如果小鸟掉落地面或撞击管道，则游戏失败。游戏会无限进行直至失败，飞行距离越远得分越高。"
 
   - number: 4
     name: "Tank battle game"
+    name_CN: "坦克大战游戏"
     description: "Create a tank battle game."
     description_CN: "创建一款坦克大战游戏。"
 
   - number: 5
     name: "Excel data process"
+    name_CN: "Excel数据处理程序"
     description: "Write an excel data processing program based on streamlit and pandas. The screen first shows an excel file upload button. After the excel file is uploaded, use pandas to display its data content. The program is required to be concise, easy to maintain, and not over-designed. It uses streamlit to process web screen displays, and pandas is sufficient to process excel reading and display. Please make sure others can execute directly without introducing additional packages."
     description_CN: "基于Streamlit和Pandas编写一个Excel数据处理程序。界面首先展示Excel文件上传按钮，上传文件后，使用Pandas展示数据内容。程序要求简洁、易维护、不过度设计，使用Streamlit实现网页界面展示，仅用Pandas完成Excel的读取与展示即可，确保无需引入额外依赖包，他人可直接运行。"
 
   - number: 6
     name: "CRUD manage"
+    name_CN: "客户信息管理程序"
     description: "Write a management program based on the crud addition, deletion, modification and query processing of the customer business entity. The customer needs to save this information: name, birthday, age, sex, and phone. The data is stored in client.db, and there is a judgement whether the customer table exists. If it doesn't, it needs to be created first. Querying is done by name; same for deleting. The program is required to be concise, easy to maintain, and not over-designed. The screen is realized through streamlit and sqlite—no need to introduce other additional packages."
     description_CN: "编写一个基于客户业务实体的增删改查（CRUD）管理程序。客户需存储信息：姓名、生日、年龄、性别、电话。数据存储在client.db数据库中，需判断客户表是否存在，不存在则先创建。查询和删除操作均通过姓名实现。程序要求简洁、易维护、不过度设计，使用Streamlit和SQLite实现界面功能，无需引入其他额外包。"

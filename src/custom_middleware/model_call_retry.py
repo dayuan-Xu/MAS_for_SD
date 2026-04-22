@@ -1,25 +1,17 @@
+import httpcore
+import httpx
 import logging
 import random
 import time
-from typing import Literal, Annotated, Callable
-
-import httpcore
-import httpx
-from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import ToolMessage
-from langchain_core.tools import tool
-from langgraph.prebuilt import ToolRuntime
-from langgraph.types import Command
 from openai import InternalServerError, APIError
 from rich.console import Console
-from rich.markdown import Markdown
-from typing_extensions import NotRequired
+from typing import Callable
 
 
 class MyRetryMiddleware(AgentMiddleware):
     """智能重试中间件，处理各类网络和服务端错误
-    
+
     特性：
     - 针对 MiniMax 529 错误和标准 5xx 错误进行重试
     - 支持网络超时错误（ReadTimeout、ConnectTimeout 等）
@@ -39,7 +31,7 @@ class MyRetryMiddleware(AgentMiddleware):
             enabled: bool = True
     ):
         """初始化重试中间件
-        
+
         Args:
             max_retries: 最大重试次数（不包括首次尝试）
             initial_wait: 首次重试等待时间（秒）
@@ -64,10 +56,10 @@ class MyRetryMiddleware(AgentMiddleware):
 
     def _calculate_wait_time(self, attempt: int) -> float:
         """计算等待时间（指数退避 + 可选的随机抖动）
-        
+
         Args:
             attempt: 当前重试次数（从0开始）
-            
+
         Returns:
             等待时间（秒）
         """
@@ -87,10 +79,10 @@ class MyRetryMiddleware(AgentMiddleware):
 
     def _is_retryable_error(self, exception: Exception) -> tuple[bool, str]:
         """判断错误是否可重试
-        
+
         Args:
             exception: 捕获的异常
-            
+
         Returns:
             (是否可重试, 错误描述)
         """
@@ -219,111 +211,3 @@ class MyRetryMiddleware(AgentMiddleware):
 
         # 理论上不会到达这里，但为了类型安全
         raise last_exception
-
-
-class TeamLeaderState(AgentState):
-    current_iteration: NotRequired[Annotated[int, "必须从1开始"]]
-    current_iteration_stage: NotRequired[
-        Literal["requirement_analysis", "system_design", "detailed_design", "code", "test"]]
-
-
-@tool
-def update_dev_progress(current_iteration: int, current_iteration_stage: str, runtime: ToolRuntime) -> Command:
-    """更新开发进度，进度包括当前迭代轮次和当前迭代阶段
-    args:
-    current_iteration: 当前迭代轮次，必须从 1 开始
-    current_iteration_stage: 当前迭代阶段，可选值有：requirement_analysis, system_design, detailed_design, code, test
-    """
-    return Command(update={
-        "current_iteration": current_iteration,
-        "current_iteration_stage": current_iteration_stage,
-        "messages": [ToolMessage(
-            content=f"成功更新开发进度！当前迭代轮次为：{current_iteration}，当前迭代阶段为：{current_iteration_stage}",
-            tool_call_id=runtime.tool_call_id)]
-    })
-
-
-class TeamLeaderMiddleware(AgentMiddleware[TeamLeaderState]):
-    state_schema = TeamLeaderState
-    tools = [update_dev_progress]
-
-
-class MyMonitorMiddleware(AgentMiddleware):
-    def __init__(self, enabled: bool = True):
-        """初始化监控中间件
-        
-        Args:
-            enabled: 是否启用监控功能。默认为 True。
-                    如果设为 False，wrap_model_call 将直接调用 handler，不打印任何内容。
-        """
-        self.enabled = enabled
-        self.console = Console()
-
-    def _render_markdown_content(self, content):
-        """
-        递归渲染 Markdown 内容，支持多种格式
-        
-        Args:
-            content: 可能是 str、list[str]、list[dict] 或其他类型
-        """
-        if content is None:
-            return
-
-        # 情况1：纯字符串
-        if isinstance(content, str):
-            if content.strip():  # 只渲染非空字符串
-                self.console.print(Markdown(content))
-            return
-
-        # 情况2：列表类型
-        if isinstance(content, list):
-            for item in content:
-                # 子项是字符串
-                if isinstance(item, str):
-                    if item.strip():
-                        self.console.print(Markdown(item))
-                # 子项是字典（OpenAI 消息格式）
-                elif isinstance(item, dict):
-                    if item.get("type") == "text":
-                        text_content = item.get("text", "")
-                        if text_content:
-                            self.console.print(Markdown(text_content))
-                    # 处理其他类型的 content（如 image_url 等）
-                    elif item.get("type"):
-                        self.console.print(f"[yellow]⚠ 跳过非文本内容类型: {item.get('type')}[/yellow]")
-                else:
-                    # 其他未知类型，尝试转换为字符串
-                    try:
-                        self.console.print(Markdown(str(item)))
-                    except Exception as e:
-                        self.console.print(f"[red]⚠ 无法渲染内容: {e}[/red]")
-            return
-
-        # 情况3：其他类型，尝试转换
-        try:
-            self.console.print(Markdown(str(content)))
-        except Exception as e:
-            self.console.print(f"[red]⚠ 无法渲染内容类型 {type(content)}: {e}[/red]")
-
-    def wrap_model_call(
-            self,
-            request: ModelRequest,
-            handler: Callable[[ModelRequest], ModelResponse],
-    ) -> ModelResponse:
-        """包装模型调用，美化打印系统提示词
-        
-        如果 enabled=False，则直接调用 handler，不执行任何监控逻辑。
-        """
-        # 如果未启用监控，直接调用 handler
-        if not self.enabled:
-            return handler(request)
-
-        # 启用监控时，打印系统提示词
-        if request.system_message:
-            self.console.print("=" * 41, " MyMonitorMiddleware ", "=" * 41, sep=" ")
-            self.console.print("\n[bold cyan]📋 System Prompt:[/bold cyan]")
-            self.console.print("[cyan]" + "─" * 60 + "[/cyan]")
-            self._render_markdown_content(request.system_message.content)
-            self.console.print("[cyan]" + "─" * 60 + "[/cyan]\n")
-
-        return handler(request)

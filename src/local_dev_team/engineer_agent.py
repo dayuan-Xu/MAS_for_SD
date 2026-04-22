@@ -1,38 +1,24 @@
 import uuid
-from deepagents import FilesystemMiddleware, SubAgentMiddleware, CompiledSubAgent
-from deepagents.middleware import SkillsMiddleware, SummarizationMiddleware
+from deepagents import SubAgentMiddleware, CompiledSubAgent
+from deepagents.middleware import SkillsMiddleware
 from langchain.agents import create_agent
-from langchain.agents.middleware import TodoListMiddleware, HumanInTheLoopMiddleware
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 
 from src.Tools import get_current_time, get_weather_at_location
-from src.agent_based_dev_team.my_middleware import TeamLeaderMiddleware, MyMonitorMiddleware
-from src.agent_based_dev_team.my_middleware_prompts import MY_TASK_TOOL_DESCRIPTION, \
-    MY_TASK_PROMPT, MY_WRITE_TODOS_SYSTEM_PROMPT, MY_EXECUTE_TOOL_DESCRIPTION, MY_FILE_SYSTEM_MIDDLEWARE_SYSTEM_PROMPT
-from src.agent_based_dev_team.shared_middleware import shared_retry_middleware
 from src.config.llm import LLMs
 from src.config.settings import settings
-from src.paths import LOCAL_AGENT_WORKSPACE, AGENT_SYSTEM_PROMPTS_FILES
-from src.utils.fixed_local_shell_backend import FixedLocalShellBackend
+from src.custom_middleware.my_middleware_prompts import MY_TASK_TOOL_DESCRIPTION, \
+    MY_TASK_PROMPT
+from src.custom_middleware.system_prompt_monitor import MyMonitorMiddleware
+from src.local_dev_team.shared_middleware import retry_middleware, todo_list_middleware, filesystem_middleware, \
+    summarization_middleware, HITL_middleware, my_local_backend
+from src.paths import AGENT_SYSTEM_PROMPTS_FILES
 from src.utils.roles_prompt_manager import get_system_prompt
 
-my_backend = FixedLocalShellBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True, inherit_env=True)
-
-myTodoListMiddleware = TodoListMiddleware(system_prompt=MY_WRITE_TODOS_SYSTEM_PROMPT)
-
 mySkillsMiddleware = SkillsMiddleware(
-    backend=my_backend,
+    backend=my_local_backend,
     sources=["/skills/engineer"])
-
-# Middleware for providing filesystem and optional execution tools to an agent.
-myFilesystemMiddleware = FilesystemMiddleware(
-    backend=my_backend,  # Optional: custom backend (defaults to StateBackend)
-    system_prompt=MY_FILE_SYSTEM_MIDDLEWARE_SYSTEM_PROMPT,
-    custom_tool_descriptions={
-        "execute": MY_EXECUTE_TOOL_DESCRIPTION,
-    }  # Optional: Custom descriptions for filesystem tools
-)
 
 weather_agent = create_agent(
     model=LLMs["gpt-4o-mini"],
@@ -47,23 +33,13 @@ weather_subagent = CompiledSubAgent(
     runnable=weather_agent,
 )
 
-mySubAgentMiddleware = SubAgentMiddleware(backend=my_backend,
+mySubAgentMiddleware = SubAgentMiddleware(backend=my_local_backend,
                                           subagents=[weather_subagent],
                                           system_prompt=MY_TASK_PROMPT,
                                           task_description=MY_TASK_TOOL_DESCRIPTION)
 
 # 设置主干模型
 llm = LLMs["minimax-m2.7"] if settings.USE_PAID_LLM_API else LLMs["gpt-5-mini"]
-
-mySummarizationMiddleware = SummarizationMiddleware(llm, backend=my_backend)
-
-myTeamLeaderMiddleware = TeamLeaderMiddleware()
-
-myHITLMiddleware = HumanInTheLoopMiddleware(
-    interrupt_on={
-        "execute": True,
-    }
-)
 
 engineer_sys_prompt = get_system_prompt("engineer", prompts_dir=AGENT_SYSTEM_PROMPTS_FILES)
 
@@ -72,14 +48,13 @@ engineer = create_agent(
     tools=[get_current_time],
     system_prompt=engineer_sys_prompt,
     middleware=[
-        myTodoListMiddleware,
+        todo_list_middleware,
         mySkillsMiddleware,
-        myFilesystemMiddleware,
+        filesystem_middleware,
         mySubAgentMiddleware,
-        mySummarizationMiddleware,
-        myTeamLeaderMiddleware,
-        myHITLMiddleware,
-        shared_retry_middleware,  # ⭐ 重试中间件放在最内层，紧贴 LLM API 调用
+        summarization_middleware,
+        HITL_middleware,
+        retry_middleware,  # ⭐ 重试中间件放在最内层，紧贴 LLM API 调用
     ],  # type: ignore[arg-type]  # LangChain中间件泛型协变误报
     checkpointer=True,
     name="David_Engineer",
@@ -99,15 +74,14 @@ if __name__ == "__main__":
         tools=[get_current_time],
         system_prompt=engineer_sys_prompt,
         middleware=[
-            myTodoListMiddleware,
+            todo_list_middleware,
             mySkillsMiddleware,
-            myFilesystemMiddleware,
+            filesystem_middleware,
             mySubAgentMiddleware,
-            mySummarizationMiddleware,
-            myTeamLeaderMiddleware,
-            myHITLMiddleware,
+            summarization_middleware,
+            HITL_middleware,
             MyMonitorMiddleware(enabled=False),
-            shared_retry_middleware,  # ⭐ 重试中间件放在最内层，重试中间件放在最内层，紧贴 LLM API 调用
+            retry_middleware,  # ⭐ 重试中间件放在最内层，重试中间件放在最内层，紧贴 LLM API 调用
         ],  # type: ignore[arg-type]  # LangChain中间件泛型协变误报
         checkpointer=MemorySaver(),
         name="David_Engineer",
