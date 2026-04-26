@@ -1,7 +1,9 @@
 # Step 1: Define tools and model
-
+import uuid
 from langchain.tools import tool
 from langchain_core.runnables import RunnableConfig
+
+from src.config.llm import LLMs
 
 # from langchain.chat_models import init_chat_model
 #
@@ -11,9 +13,8 @@ from langchain_core.runnables import RunnableConfig
 #     temperature=0
 # )
 
-from src.config.llm import LLMs
-
 model = LLMs["gpt-5-mini"]
+
 
 # Define tools
 @tool
@@ -63,7 +64,8 @@ import operator
 
 class MessagesState(TypedDict):
     messages: Annotated[list[AnyMessage], operator.add]  # 追加式更新
-    llm_calls_count: int                                 # 覆盖式更新
+    llm_calls_count: int  # 覆盖式更新
+
 
 # Step 3: Define model node
 from langchain.messages import SystemMessage
@@ -102,6 +104,7 @@ def tool_node(state: dict):
         result.append(ToolMessage(content=observation, tool_call_id=tool_call["id"]))
     return {"messages": result}
 
+
 # Step 5: Define logic to determine whether to end
 
 from typing import Literal
@@ -121,6 +124,7 @@ def should_continue(state: MessagesState) -> Literal["tool_node", END]:
 
     # Otherwise, we stop (reply to the user)
     return END
+
 
 # Step 6: Build agent
 
@@ -143,7 +147,6 @@ agent_builder.add_edge("tool_node", "llm_call")
 # Compile the agent
 agent = agent_builder.compile(name="Arithmetic ReAct Agent v2")
 
-
 # Show the agent
 graph_png = agent.get_graph(xray=True).draw_mermaid_png()
 with open(f"{agent.name}.png", "wb") as f:
@@ -151,6 +154,7 @@ with open(f"{agent.name}.png", "wb") as f:
 print(f"{agent.name} 架构图已保存为 {agent.name}.png")
 
 from langchain.messages import HumanMessage
+
 messages = [HumanMessage(content="Add 1 and 1.")]
 
 # # Invoke 普通调用，返回值是 Graph 执行结束时的 State
@@ -158,12 +162,17 @@ messages = [HumanMessage(content="Add 1 and 1.")]
 # for m in messages["messages"]:
 #     m.pretty_print()
 
+run_config: RunnableConfig = {
+    "recursion_limit": 3,
+    "run_name": "recursion limit 测试",
+    "configurable": {"thread_id": str(uuid.uuid4())}
+}
+
 from rich.pretty import pprint
+
 # 流式模式调用，实时展示进度，每次返回的是一个元组（mode，update）
 # 每次update是一个字典，其中key为节点名称，value为节点对Graph State的更新
 for mode, update in agent.stream({"messages": messages}, stream_mode=["updates"]):
     print("=======================================================")
     print("模式：", mode)
     pprint(update)
-
-

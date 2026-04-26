@@ -4,9 +4,10 @@
 提供懒加载、缓存机制来管理角色提示词文件。
 """
 
+from pathlib import Path
+
 import logging
 from functools import lru_cache
-from pathlib import Path
 from typing import Dict
 
 from src.paths import DEEP_AGENT_SYSTEM_PROMPTS_FILES

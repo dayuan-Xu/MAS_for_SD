@@ -53,8 +53,9 @@ if __name__ == "__main__":
     from src.utils.graph_running_utils import multi_turn_conversation
 
     run_config: RunnableConfig = {
-        "tags": ["agent_based_dev_team", "Leader"],
-        "run_name": "Leader-测试-五子棋",
+        "tags": ["local_agent_dev_team", "Leader"],
+        "run_name": "recursion_limit测试",
+        "recursion_limit": 25,  # LangGraph 默认值，适合带中间件的复杂智能体
         "configurable": {"thread_id": str(uuid.uuid4())}
     }
 

@@ -1,6 +1,9 @@
+import logging
 from pydantic_settings import BaseSettings, SettingsConfigDict  # 专门管纯固定的配置（纯静态数据），只会随软件开发环节（开发、测试、上线）而发生一定变化
 
 from src.paths import DOT_ENV_FILE
+
+logger = logging.getLogger(__name__)
 
 """
 BaseSettings 按这个 优先级 从各种来源 加载配置到Settings单例：
@@ -60,9 +63,9 @@ class Settings(BaseSettings):
 
 # 🔥 全局唯一单例（整个项目只创建这一个对象）
 settings = Settings()
-print("\n全局静态配置settings已加载！当前LLM API配置：" + "minimax" if settings.USE_PAID_LLM_API else "chatanywhere")
+logger.info("全局静态配置settings已加载！当前LLM API配置：" + "minimax" if settings.USE_PAID_LLM_API else "chatanywhere")
 
-# pprint(settings.model_dump())
+# pprint.info(settings.model_dump())
 
 # 加载LangSmith相关配置到环境变量
 import os
@@ -71,4 +74,4 @@ os.environ["LANGSMITH_TRACING"] = "true" if settings.LANGSMITH_TRACING else "fal
 os.environ["LANGSMITH_ENDPOINT"] = settings.LANGSMITH_ENDPOINT
 os.environ["LANGSMITH_API_KEY"] = settings.LANGSMITH_API_KEY
 os.environ["LANGSMITH_PROJECT"] = settings.LANGSMITH_PROJECT
-print("\nLangSmith配置已加载到环境变量中，可以通过LangSmith继续跟踪监控！")
+logger.info("LangSmith配置已加载到环境变量中，可以通过LangSmith继续跟踪监控！")

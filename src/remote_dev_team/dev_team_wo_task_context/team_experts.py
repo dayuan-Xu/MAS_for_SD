@@ -1,66 +1,83 @@
+import logging
 from deepagents import CompiledSubAgent, SubAgentMiddleware, create_deep_agent
 from deepagents.middleware import SkillsMiddleware
 from deepagents.middleware.subagents import SubAgent
 from langchain.agents import create_agent
 
 from src.Tools import get_current_time, internet_search
-from src.agentbay_based_dev_team.shared_middleware import my_sandbox_backend, filesystem_middleware, \
-    summarization_middleware, todo_list_middleware
 from src.config.llm import LLMs
 from src.config.settings import settings
 from src.local_dev_team.shared_middleware import retry_middleware
 from src.paths import AGENTBAY_SYSTEM_PROMPTS_FILES
+# 从 custom_middleware.my_sandbox 导入技能路径常量
+from src.remote_dev_team.agent_config import ENGINEER_SKILL_PATH, QA_ENGINEER_SKILL_PATH, my_composite_backend
+from src.remote_dev_team.shared_middleware import filesystem_middleware, summarization_middleware, todo_list_middleware
 from src.utils.roles_prompt_manager import get_system_prompt, get_system_prompts_for_roles
+
+logger = logging.getLogger(__name__)
 
 team_system_prompts = get_system_prompts_for_roles(("product_manager", "architect", "project_manager", "QA_engineer"),
                                                    prompts_dir=AGENTBAY_SYSTEM_PROMPTS_FILES)
 
 llm = LLMs["minimax-m2.7"] if settings.USE_PAID_LLM_API else LLMs["gpt-5-mini"]
 
-product_manager_graph = create_deep_agent(
-    model=llm,
-    tools=[get_current_time, internet_search],
-    system_prompt=team_system_prompts["product_manager"],
-    middleware=[retry_middleware],
-    backend=my_sandbox_backend,
-    name="Alice_ProductManager"
-)
-product_manager = CompiledSubAgent(
-    name="Alice",
-    description="一名产品经理，可根据需求描述，交付一份产品需求文档。",
-    runnable=product_manager_graph,
+
+def create_deep_agent_expert(
+        role_name: str,
+        expert_name: str,
+        expert_description: str,
+) -> CompiledSubAgent:
+    """创建基于deep agent的专家智能体。
+    
+    Args:
+        role_name: 角色名称（用于获取系统提示词，如 "product_manager", "architect", "project_manager"）
+        expert_name: assign主调智能体可见的专家名称（如 "Alice", "Bob", "Cindy"）
+        expert_description: 专家描述
+    
+    Returns:
+        team_expert
+    """
+    # 获取系统提示词
+    sys_prompt = team_system_prompts[role_name]
+
+    # 创建deep agent graph
+    agent_graph = create_deep_agent(
+        model=llm,
+        tools=[get_current_time, internet_search],
+        system_prompt=sys_prompt,
+        middleware=[retry_middleware],
+        backend=my_composite_backend,
+        name=f"{expert_name}_{role_name.title().replace('_', '')}"  # langchain在给AIMessage添加name属性时使用
+    )
+
+    # 创建CompiledSubAgent,视为可assign的团队专家
+    team_expert = CompiledSubAgent(
+        name=expert_name,
+        description=expert_description,
+        runnable=agent_graph,
+    )
+
+    return team_expert
+
+
+# 创建产品经理、架构师、项目经理（均为一次性deep agent）
+product_manager = create_deep_agent_expert(
+    role_name="product_manager",
+    expert_name="Alice",
+    expert_description="一名产品经理，可根据需求描述，交付一份产品需求文档。不能在多次工作分配间保持记忆。",
 )
 
-architect_graph = create_deep_agent(
-    model=llm,
-    tools=[get_current_time, internet_search],
-    system_prompt=team_system_prompts["architect"],
-    middleware=[retry_middleware],
-    backend=my_sandbox_backend,
-    name="Bob_Architect"
-)
-architect = CompiledSubAgent(
-    name="Bob",
-    description="一名架构师，可根据产品需求文档，交付一份软件架构设计文档。",
-    runnable=architect_graph,
+architect = create_deep_agent_expert(
+    role_name="architect",
+    expert_name="Bob",
+    expert_description="一名架构师，可根据产品需求文档，交付一份软件架构设计文档。不能在多次工作分配间保持记忆。",
 )
 
-project_manager_graph = create_deep_agent(
-    model=llm,
-    tools=[get_current_time, internet_search],
-    system_prompt=team_system_prompts["project_manager"],
-    middleware=[retry_middleware],
-    backend=my_sandbox_backend,
-    name="Cindy_ProjectManager"  # langchain在给AIMessage添加name属性时使用
+project_manager = create_deep_agent_expert(
+    role_name="project_manager",
+    expert_name="Cindy",
+    expert_description="一名项目经理，可根据软件架构设计文档，交付软件详细设计文档。不能在多次工作分配间保持记忆。",
 )
-project_manager = CompiledSubAgent(
-    name="Cindy",  # SubAgentMiddleware在注入系统提示词时使用
-    description="一名项目经理，可根据软件架构设计文档，交付软件详细设计文档。",
-    runnable=project_manager_graph,
-)
-
-# 设置主干模型
-llm = LLMs["minimax-m2.7"] if settings.USE_PAID_LLM_API else LLMs["gpt-5-mini"]
 
 # 通用子智能体描述
 DEFAULT_GENERAL_PURPOSE_DESCRIPTION = ("General-purpose agent for "
@@ -98,7 +115,7 @@ def create_expert_agent(
     """
     # 创建技能中间件
     skills_middleware = SkillsMiddleware(
-        backend=my_sandbox_backend,
+        backend=my_composite_backend,
         sources=[skill_path]
     )
 
@@ -121,7 +138,7 @@ def create_expert_agent(
     }
 
     subagent_middleware = SubAgentMiddleware(
-        backend=my_sandbox_backend,
+        backend=my_composite_backend,
         subagents=[general_purpose_subagent]
     )
 
@@ -152,9 +169,6 @@ def create_expert_agent(
     return team_expert
 
 
-# 从 custom_middleware.my_sandbox 导入技能路径常量
-from src.custom_middleware.my_sandbox import ENGINEER_SKILL_PATH, QA_ENGINEER_SKILL_PATH
-
 # 创建工程师
 engineer = create_expert_agent(
     role_name="engineer",
@@ -175,6 +189,6 @@ QA_engineer = create_expert_agent(
     checkpointer_enabled=True,  # Eva应该在多次assign间保持记忆
 )
 
-team_experts = [product_manager, architect, project_manager,  # 全是一次性deep agent
-                engineer,  # 需要执行工具，所以提示词和工具描述需要一定的定制化，不能直接用deep agent
-                QA_engineer]  # 需要执行工具，所以提示词和工具描述需要一定的定制化，不能直接用deep agent
+team_experts_list = [product_manager, architect, project_manager,  # 全是一次性deep agent
+                     engineer,  # 需要执行工具，所以提示词和工具描述需要一定的定制化，不能直接用deep agent
+                     QA_engineer]  # 需要执行工具，所以提示词和工具描述需要一定的定制化，不能直接用deep agent

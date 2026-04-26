@@ -11,7 +11,7 @@
   - 每次智能体准备调用 LLM 前（wrap_model_call 钩子）
   - 中间件通过 backend.read() 读取收件箱中的所有未读消息
   - 将这些消息转换为 HumanMessage，注入到对话历史中
-  - 智能体就会"看到"新消息，就像有人给它发了邮件一样
+  - 智能体就会“看到”新消息，就像有人给它发了邮件一样
 
 【并发执行】
   - Leader 和 Engineer 各自独立运行，有自己的 thread_id
@@ -20,6 +20,7 @@
 """
 
 import json
+import logging
 import time
 import uuid
 from langchain.agents.middleware.types import (
@@ -38,7 +39,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 from typing import NotRequired
 
-from src.custom_middleware.my_sandbox import MySandbox
+from src.utils.my_sandbox import MySandbox
 
 
 class MessageBusState(AgentState):
@@ -86,8 +87,8 @@ class MessageBusMiddleware(AgentMiddleware[MessageBusState, ContextT, ResponseT]
     
     Example:
         ```python
-        from src.agentbay_based_dev_team.my_sandbox import my_sandbox_backend
-        from src.agentbay_based_dev_team.message_bus_middleware import MessageBusMiddleware
+        from src.remote_dev_team.my_sandbox import my_sandbox_backend
+        from src.remote_dev_team.message_bus_middleware import MessageBusMiddleware
         
         # 创建共享的 backend
         backend = my_sandbox_backend
@@ -132,12 +133,15 @@ class MessageBusMiddleware(AgentMiddleware[MessageBusState, ContextT, ResponseT]
         Note:
             agent_name 不再需要在初始化时传入，会在运行时从 runtime.config.metadata['lc_agent_name'] 自动获取。
         """
+        self.logger = logging.getLogger(__name__)
         self.message_bus_root = message_bus_root.rstrip("/")
         self.backend = backend
         self._agent_name: str | None = None  # 延迟初始化，在第一次使用时从 runtime 获取
 
         # 注册发送消息工具
         self.send_message_tool = self._create_send_message_tool()
+
+        self.logger.info("✅ MessageBusMiddleware 初始化完成")
 
     def _get_agent_name(self, runtime_context) -> str:
         """从 runtime 中获取当前智能体名称。
@@ -347,8 +351,10 @@ send_message(
             write_result = backend.write(message_file, message_json)
 
             if write_result.error:
+                self.logger.error(f"❌ 发送消息失败: {write_result.error}")
                 return f"❌ 发送消息失败：{write_result.error}"
 
+            self.logger.info(f"✅ 消息已发送: {sender_name} → {recipient} (主题: {subject})")
             return f"""✅ 消息已成功发送到 {recipient} 的收件箱
 
 📧 消息ID: {message_id}
@@ -360,6 +366,7 @@ send_message(
 """
 
         except Exception as e:
+            self.logger.error(f"❌ 发送消息时发生错误: {str(e)}", exc_info=True)
             return f"❌ 发送消息时发生错误：{str(e)}"
 
     def _check_and_read_unread_messages(self, runtime_context) -> list[HumanMessage]:
@@ -441,14 +448,21 @@ send_message(
                         updated_json = json.dumps(message_data, ensure_ascii=False, indent=2)
                         backend.write(msg_file, updated_json)
 
+                        self.logger.debug(f"📨 读取未读消息: {sender} → {current_agent_name} (主题: {subject})")
+
                 except Exception as e:
                     # 单个消息读取失败不影响其他消息
+                    self.logger.warning(f"⚠️ 读取消息文件失败 {msg_file}: {e}")
                     continue
+
+            if unread_messages:
+                self.logger.info(f"✅ 共读取 {len(unread_messages)} 条未读消息")
 
             return unread_messages
 
         except Exception as e:
             # 如果检查失败，返回空列表，不阻断正常流程
+            self.logger.warning(f"⚠️ 检查收件箱失败: {e}", exc_info=True)
             return []
 
     def wrap_model_call(

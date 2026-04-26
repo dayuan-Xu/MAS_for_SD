@@ -1,6 +1,5 @@
+import logging
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from rich.console import Console
-from rich.markdown import Markdown
 from typing import Callable
 
 
@@ -13,60 +12,14 @@ class MyMonitorMiddleware(AgentMiddleware):
                     如果设为 False，wrap_model_call 将直接调用 handler，不打印任何内容。
         """
         self.enabled = enabled
-        self.console = Console()
-
-    def _render_markdown_content(self, content):
-        """
-        递归渲染 Markdown 内容，支持多种格式
-
-        Args:
-            content: 可能是 str、list[str]、list[dict] 或其他类型
-        """
-        if content is None:
-            return
-
-        # 情况1：纯字符串
-        if isinstance(content, str):
-            if content.strip():  # 只渲染非空字符串
-                self.console.print(Markdown(content))
-            return
-
-        # 情况2：列表类型
-        if isinstance(content, list):
-            for item in content:
-                # 子项是字符串
-                if isinstance(item, str):
-                    if item.strip():
-                        self.console.print(Markdown(item))
-                # 子项是字典（OpenAI 消息格式）
-                elif isinstance(item, dict):
-                    if item.get("type") == "text":
-                        text_content = item.get("text", "")
-                        if text_content:
-                            self.console.print(Markdown(text_content))
-                    # 处理其他类型的 content（如 image_url 等）
-                    elif item.get("type"):
-                        self.console.print(f"[yellow]⚠ 跳过非文本内容类型: {item.get('type')}[/yellow]")
-                else:
-                    # 其他未知类型，尝试转换为字符串
-                    try:
-                        self.console.print(Markdown(str(item)))
-                    except Exception as e:
-                        self.console.print(f"[red]⚠ 无法渲染内容: {e}[/red]")
-            return
-
-        # 情况3：其他类型，尝试转换
-        try:
-            self.console.print(Markdown(str(content)))
-        except Exception as e:
-            self.console.print(f"[red]⚠ 无法渲染内容类型 {type(content)}: {e}[/red]")
+        self.logger = logging.getLogger(__name__)
 
     def wrap_model_call(
             self,
             request: ModelRequest,
             handler: Callable[[ModelRequest], ModelResponse],
     ) -> ModelResponse:
-        """包装模型调用，美化打印系统提示词
+        """包装模型调用，记录系统提示词到日志
 
         如果 enabled=False，则直接调用 handler，不执行任何监控逻辑。
         """
@@ -74,12 +27,24 @@ class MyMonitorMiddleware(AgentMiddleware):
         if not self.enabled:
             return handler(request)
 
-        # 启用监控时，打印系统提示词
+        # 启用监控时，记录系统提示词到日志
         if request.system_message:
-            self.console.print("=" * 41, " MyMonitorMiddleware ", "=" * 41, sep=" ")
-            self.console.print("\n[bold cyan]📋 System Prompt:[/bold cyan]")
-            self.console.print("[cyan]" + "─" * 60 + "[/cyan]")
-            self._render_markdown_content(request.system_message.content)
-            self.console.print("[cyan]" + "─" * 60 + "[/cyan]\n")
+            separator = "=" * 83
+            self.logger.info(separator)
+            self.logger.info("📋 MyMonitorMiddleware - System Prompt:")
+            self.logger.info(separator)
+            
+            # 提取并记录系统提示词内容
+            content = request.system_message.content
+            if isinstance(content, str):
+                # 只记录前500个字符，避免日志过长
+                preview = content[:500] if len(content) > 500 else content
+                self.logger.info(f"System prompt (preview):\n{preview}")
+                if len(content) > 500:
+                    self.logger.info(f"... (总长度: {len(content)} 字符，已截断)")
+            else:
+                self.logger.info(f"System prompt type: {type(content)}")
+            
+            self.logger.info(separator)
 
         return handler(request)

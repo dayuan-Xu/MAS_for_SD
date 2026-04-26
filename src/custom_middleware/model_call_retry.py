@@ -5,7 +5,6 @@ import random
 import time
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from openai import InternalServerError, APIError
-from rich.console import Console
 from typing import Callable
 
 
@@ -52,7 +51,6 @@ class MyRetryMiddleware(AgentMiddleware):
         self.retryable_status_codes = retryable_status_codes or {529, 500, 502, 503, 504}
 
         self.logger = logging.getLogger(__name__)
-        self.console = Console()
 
     def _calculate_wait_time(self, attempt: int) -> float:
         """计算等待时间（指数退避 + 可选的随机抖动）
@@ -160,51 +158,73 @@ class MyRetryMiddleware(AgentMiddleware):
             try:
                 # 首次尝试或重试后调用 handler
                 if attempt == 0:
+                    self.logger.info("📡 [LLM调用] 开始第1次尝试...")
+                    # ⭐ 强制刷新日志，确保立即输出
+                    import sys
+                    for h in self.logger.handlers:
+                        h.flush()
+                    sys.stdout.flush()
+                    sys.stderr.flush()
                     return handler(request)
                 else:
                     # 重试时打印日志
-                    self.console.print("=" * 41, " RetryMiddleware ", "=" * 41, sep=" ")
-                    self.console.print(
-                        f"[yellow]🔄 第 {attempt}/{self.max_retries} 次重试...[/yellow]"
-                    )
-                    self.logger.warning(f"第 {attempt}/{self.max_retries} 次重试")
+                    separator = "=" * 83
+                    self.logger.warning(separator)
+                    self.logger.warning(f"🔄 RetryMiddleware - 第 {attempt}/{self.max_retries} 次重试...")
+                    self.logger.warning(separator)
+                    # 强制刷新所有handler
+                    import sys
+                    for h in self.logger.handlers:
+                        h.flush()
+                    sys.stdout.flush()
+                    sys.stderr.flush()
                     return handler(request)
 
             except Exception as e:
                 last_exception = e
+                
+                # ⭐ 关键：记录所有捕获的异常，便于调试
+                self.logger.error(f"⚠️ 捕获到异常类型: {type(e).__name__}")
+                self.logger.error(f"⚠️ 异常信息: {e}")
+                self.logger.error(f"⚠️ 异常模块: {type(e).__module__}")
 
                 # 检查是否是可重试的错误
                 is_retryable, error_desc = self._is_retryable_error(e)
 
                 if not is_retryable:
                     # 不可重试的错误，直接抛出
-                    self.console.print("=" * 41, " RetryMiddleware ", "=" * 41, sep=" ")
-                    self.console.print(f"[red]❌ 遇到不可重试的错误: {e}[/red]")
+                    separator = "=" * 83
+                    self.logger.error(separator)
+                    self.logger.error(f"❌ RetryMiddleware - 遇到不可重试的错误: {e}")
+                    self.logger.error(f"   异常类型: {type(e).__name__}")
+                    self.logger.error(separator)
                     raise
 
                 # 如果是最后一次尝试，抛出异常
                 if attempt >= self.max_retries:
-                    self.console.print("=" * 41, " RetryMiddleware ", "=" * 41, sep=" ")
-                    self.console.print(
-                        f"[red]❌ 已达到最大重试次数({self.max_retries})，放弃重试[/red]"
-                    )
-                    self.logger.error(
-                        f"达到最大重试次数({self.max_retries})，最后错误: {error_desc}"
-                    )
+                    separator = "=" * 83
+                    self.logger.error(separator)
+                    self.logger.error(f"❌ RetryMiddleware - 已达到最大重试次数({self.max_retries})，放弃重试")
+                    self.logger.error(separator)
+                    self.logger.error(f"最后错误: {error_desc}")
                     raise
 
                 # 计算等待时间
                 wait_time = self._calculate_wait_time(attempt)
 
                 # 打印重试信息
-                self.console.print("=" * 41, " RetryMiddleware ", "=" * 41, sep=" ")
-                self.console.print(
-                    f"[orange3]⚠️  {error_desc}[/orange3]\n"
-                    f"[blue]⏱️  等待 {wait_time:.2f} 秒后重试...[/blue]"
-                )
-                self.logger.warning(
-                    f"{error_desc}\n等待 {wait_time:.2f} 秒后重试 (第{attempt + 1}/{self.max_retries}次)"
-                )
+                separator = "=" * 83
+                self.logger.warning(separator)
+                self.logger.warning(f"⚠️  RetryMiddleware - {error_desc}")
+                self.logger.warning(f"⏱️  等待 {wait_time:.2f} 秒后重试... (第{attempt + 1}/{self.max_retries}次)")
+                self.logger.warning(separator)
+                
+                # ⭐ 强制刷新日志
+                import sys
+                for h in self.logger.handlers:
+                    h.flush()
+                sys.stdout.flush()
+                sys.stderr.flush()
 
                 # 等待后重试
                 time.sleep(wait_time)

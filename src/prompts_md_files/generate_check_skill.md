@@ -1,7 +1,8 @@
 目前我要求你办1个任务：
 
 任务具体要求：
-基于所有团队成员（不包括Leader Tim）当前版本的系统提示词为TeamLeader Tim编写一个SKILL，该SKILL保存至名为deliverables-check的目录中。
+基于所有团队成员（不包括Leader Tim）当前版本的系统提示词为TeamLeader Tim编写一个SKILL，该SKILL保存至名为deliverables-check
+（位于src/agentbay_based_dev_team/agent_resources/skills/leader/deliverables-check）的目录中。
 
 该目录内部应该包含一个SKILL.md文件和本技能可能会使用的参考文件目录reference。
 该SKILL.md文件内容包含frontmatter和正式内容，正式内容包含标题、概述、使用说明（或者说工作流程），SKILL.md文件的正式内容应该保持简洁！
