@@ -1,19 +1,23 @@
+import logging
+import os
+import tempfile
+import threading
+import time
+from datetime import datetime
 from pathlib import Path
 
-import logging
-import threading
-from agentbay import AgentBay, CreateSessionParams, SessionResult, ContextSync, Session, ContextService, SyncPolicy
-from datetime import datetime
+from agentbay import AgentBay, CreateSessionParams, SessionResult, ContextSync, ContextService
 from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse
 from deepagents.backends.sandbox import BaseSandbox
-from typing import Any
 
 from src.config.settings import settings
-from src.paths import AGENTBAY_BASED_AGENT_RESOURCES_PATH
 
 logger = logging.getLogger(__name__)
 
 # ========== 常量定义 ==========
+
+CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK = "/tmp/persistent/agent_workspace/warehouse"  # 开发新任务时，将新任务工作空间挂载到该目录下
+
 # 文件扩展名分类
 TEXT_FILE_EXTENSIONS = {
     '.txt', '.md', '.py', '.js', '.ts', '.html', '.css', '.json', '.yaml', '.yml',
@@ -57,237 +61,39 @@ EXCLUDED_FILE_EXTENSIONS = {
 PRESERVED_HIDDEN_FILES = {'.env', '.gitignore', '.dockerignore'}
 
 
-def _collect_local_files(
-        local_dir: Path,
-        include_patterns: list[str] | None = None
-) -> list[tuple[Path, str]]:
-    """收集本地目录下指定文件夹的所有文件及其相对路径。
+def _to_snake_case(name: str) -> str:
+    """将任务名称转换为蛇形命名（snake_case）。
+    
+    转换规则：
+    1. 将所有字符转为小写
+    2. 将空格、连字符等非字母数字字符替换为下划线
+    3. 去除连续的下划线
+    4. 去除首尾的下划线
     
     Args:
-        local_dir: 本地根目录
-        include_patterns: 要包含的子文件夹名称列表，如 ['memory', 'skills']
-                         如果为 None，则包含所有文件
+        name: 原始任务名称，如 "Snake game", "Excel data process"
     
     Returns:
-        列表，每个元素为 (本地文件路径, 相对路径字符串)
+        蛇形命名的字符串，如 "snake_game", "excel_data_process"
+    
+    Examples:
+        >>> _to_snake_case("Snake game")
+        'snake_game'
+        >>> _to_snake_case("Excel data process")
+        'excel_data_process'
+        >>> _to_snake_case("CRUD manage")
+        'crud_manage'
     """
-    collected_files = []
-
-    if include_patterns:
-        # 只收集指定子文件夹中的文件
-        for pattern in include_patterns:
-            target_dir = local_dir / pattern
-            if target_dir.exists() and target_dir.is_dir():
-                for file_path in target_dir.rglob('*'):
-                    if file_path.is_file():
-                        relative_path = file_path.relative_to(local_dir)
-                        rel_path_str = relative_path.as_posix()
-                        collected_files.append((file_path, rel_path_str))
-            else:
-                logger.warning(f"⚠️  警告: 指定的文件夹不存在: {target_dir}")
-    else:
-        # 收集所有文件（原有行为）
-        for file_path in local_dir.rglob('*'):
-            if file_path.is_file():
-                relative_path = file_path.relative_to(local_dir)
-                rel_path_str = relative_path.as_posix()
-                collected_files.append((file_path, rel_path_str))
-
-    return collected_files
-
-
-def _build_cloud_file_index(agent_bay: AgentBay, context_id: str) -> dict[str, Any]:
-    """构建云端文件的索引字典，用于快速查找。
-    
-    Returns:
-        字典，键为文件相对路径，值为文件元数据对象
-    """
-    cloud_file_index = {}
-    list_result = agent_bay.context.list_files(
-        context_id=context_id,
-        parent_folder_path="/",
-        page_number=1,
-        page_size=1000
-    )
-
-    if list_result.success:
-        for entry in list_result.entries:
-            # entry.file_path 已经是相对于根目录的路径
-            cloud_file_index[entry.file_path] = entry
-
-    return cloud_file_index
-
-
-def _upload_files_to_session(
-        session: Session,
-        files_to_sync: list[tuple[Path, str]],
-        mount_path: str
-) -> int:
-    """将文件列表上传到会话中的指定挂载路径。
-    
-    ⭐ 优化：使用 AgentBay 原生的 upload_file() API，而不是 write_file()
-    
-    Args:
-        session: AgentBay 会话对象
-        files_to_sync: 待同步文件列表 [(本地路径, 相对路径), ...]
-        mount_path: 云端挂载路径
-    
-    Returns:
-        成功上传的文件数量
-    """
-    synced_count = 0
-
-    for local_file, rel_path in files_to_sync:
-        # ⭐ 关键修复：确保路径始终使用正斜杠（跨平台兼容）
-        # 在 Windows 上，Path 对象转字符串会使用反斜杠，需要强制转换为正斜杠
-        target_path = (Path(mount_path) / rel_path).as_posix()
-
-        try:
-            # 确保父目录存在
-            parent_dir = str(Path(target_path).parent)
-            if parent_dir and parent_dir != '.':
-                session.file_system.create_directory(parent_dir)
-
-            # ⭐ 关键优化：使用原生 upload_file API（支持二进制文件）
-            upload_result = session.file_system.upload_file(
-                local_path=str(local_file),
-                remote_path=target_path
-            )
-
-            if upload_result.success:
-                synced_count += 1
-                logger.debug(f"✅ Uploaded: {local_file} -> {target_path}")
-            else:
-                error_msg = getattr(upload_result, 'error', 'Unknown error')
-                logger.warning(f"✗ 上传失败 {rel_path}: {error_msg}")
-
-        except Exception as e:
-            logger.error(f"✗ 同步异常 {rel_path}: {e}")
-
-    return synced_count
-
-
-def sync_local_to_context(
-        api_key: str,
-        context_name: str,
-        local_dir: str,
-        mount_path: str = "/tmp/persistent/sync_target",
-        image_id: str = "linux_latest",
-        include_folders: list[str] | None = None
-) -> bool:
-    """验证并同步本地文件夹到云端持久化上下文 (Context)。
-    
-    工作流程：
-    1. 获取或创建 Context（云端存储容器）
-    2. 扫描本地指定文件夹，构建待同步列表
-    3. 创建临时会话，挂载 Context
-    4. 上传所有文件到云端
-    5. 删除会话并同步数据到 OSS
-    
-    Args:
-        api_key: AgentBay API密钥
-        context_name: Context 的名称（如 "team-skills"）
-        local_dir: 本地源文件夹路径
-        mount_path: Context 在会话中的挂载路径
-        image_id: 临时会话使用的镜像ID
-        include_folders: local_dir下要同步的子文件夹名称列表，如 ['memory', 'skills']
-                        如果为 None，则同步 local_dir 下的所有文件
-    
-    Returns:
-        bool: 是否成功完成同步
-    """
-    logger.info(f"🚀 开始同步: {local_dir} -> Context '{context_name}'")
-
-    if include_folders:
-        logger.info(f"📂 将同步以下文件夹: {', '.join(include_folders)}")
-    else:
-        logger.info(f"📂 将同步整个目录")
-
-    # 验证本地目录存在
-    local_path = Path(local_dir)
-    if not local_path.exists():
-        logger.error(f"❌ 错误: 本地目录不存在: {local_dir}")
-        return False
-
-    try:
-        # ========== 第1步：初始化 AgentBay 并获取 Context ==========
-        agent_bay = AgentBay(api_key=api_key)
-
-        get_result = agent_bay.context.get(context_name, create=True)
-        if not get_result.success or not get_result.context:
-            raise RuntimeError(f"Failed to get/create context: {get_result.error_message}")
-
-        context = get_result.context
-        logger.info(f"✅ Context ID: {context.id}")
-
-        # ========== 第2步：收集本地文件 ==========
-        local_files = _collect_local_files(local_path, include_folders)
-
-        if not local_files:
-            logger.info(f"✨ 未发现需要同步的文件。")
-            return True
-
-        logger.info(f"📁 发现 {len(local_files)} 个待同步文件")
-
-        # ========== 第3步：创建会话并上传文件 ==========
-        logger.info(f"🔗 创建临时会话进行文件同步...")
-        context_sync = ContextSync.new(context.id, mount_path)
-        params = CreateSessionParams(image_id=image_id, context_syncs=[context_sync])
-        session_result = agent_bay.create(params)
-
-        if not session_result.success or not session_result.session:
-            raise RuntimeError(f"Failed to create session: {session_result.error_message}")
-
-        session = session_result.session
-        logger.info(f"✅ 会话创建成功: {session.session_id}")
-
-        # 上传所有文件
-        synced_count = _upload_files_to_session(session, local_files, mount_path)
-
-        # ========== 第4步：清理会话并同步到 OSS ==========
-        logger.info(f"💾 正在同步会话中的context box数据到OSS...")
-        agent_bay.delete(session, sync_context=True)  # sync_context=True 确保数据写入 OSS
-
-        logger.info(f"✅ 同步完成，同步用的会话也已经删除！共处理 {synced_count}/{len(local_files)} 个文件。")
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ 同步过程出错: {str(e)}", exc_info=True)
-        return False
-
-
-CONTEXT_NAME_OF_AGENT_RESOURCES = "agent-resources"  # 该存储盒的名称，内含'/skills'、'/memory'两个文件夹
-CONTEXT_MOUNT_PATH_OF_AGENT_RESOURCES = "/tmp/persistent/agent_workspace"  # 该存储盒在会话环境中挂载到的目录
-
-CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK = "/tmp/persistent/agent_workspace/warehouse"  # 开发新任务时，将新任务工作空间挂载到该目录下
-
-
-def init_remote_agent_resources(
-        api_key: str = settings.WUYING_AGENTBAY_API_KEY,
-        local_agent_resources_dir=AGENTBAY_BASED_AGENT_RESOURCES_PATH,
-        include_folders: list[str] | None = None
-):
-    """将本地智能体开发团队的运行时资源上传到云端存储盒。
-    
-    Args:
-        api_key: AgentBay API密钥
-        local_agent_resources_dir: 保存智能体运行时所需资源的本地文件路径
-        include_folders: 要同步的子文件夹列表，如 ['memory', 'skills']；如果明确传入 None，则同步整个工作空间
-    
-    示例:
-        # 只同步 memory 和 skills 文件夹
-        init_remote_agent_resoureces(include_folders=['memory', 'skills'])
-        
-        # 同步整个运行时资源
-        init_remote_agent_resources()
-    """
-    return sync_local_to_context(
-        api_key=api_key,
-        context_name=CONTEXT_NAME_OF_AGENT_RESOURCES,
-        local_dir=local_agent_resources_dir,
-        mount_path=CONTEXT_MOUNT_PATH_OF_AGENT_RESOURCES,
-        include_folders=include_folders
-    )
+    import re
+    # 转为小写
+    name = name.lower()
+    # 将空格、连字符等非字母数字字符替换为下划线
+    name = re.sub(r'[^a-z0-9]+', '_', name)
+    # 去除连续的下划线
+    name = re.sub(r'_+', '_', name)
+    # 去除首尾的下划线
+    name = name.strip('_')
+    return name
 
 
 def _should_skip_path(relative_path: Path) -> bool:
@@ -369,59 +175,27 @@ class MySandbox(BaseSandbox):
             idle_timeout: 云端会话空闲自动释放时间（秒），默认1h（60*60秒），太短的话，很有可能在等待智能体输出大块内容（这需要llm耗费10min左右来输出3.8万个字符）之前，该会话就会被自动释放了！！！
         """
         self.task_name = task_name  # 公开属性，供外部访问
+        self._task_name_snake_case = _to_snake_case(task_name) if task_name else ""
         self.reuse_existing = reuse_existing
         self._agent_bay = AgentBay(api_key=api_key)
         self._image_id = image_id
         self._idle_timeout = idle_timeout
         self._session = None
-        self._session_id = None  # 用于重连本次创建的会话
+        self._session_id = None  # 用于暂停会话后，重新连接该会话（目前未实现会话暂停）
+        self._task_context_box_id = None  # 存储任务上下文盒子的ID
 
-        # ⭐ 关键修复：添加线程锁保护，防止并发竞态条件导致重复创建会话
+        self._initialize_session()  # 创建会话
+
+        # 添加线程锁保护，防止并发竞态条件导致重复创建会话
         self._session_lock = threading.Lock()  # 线程锁，确保只有一个线程执行初始化
 
-        # 注意：这里不再立即调用 _initialize_session()，而是等到第一次使用时再创建
-
-    def _get_agent_resources_context_sync(self) -> ContextSync:
-        """获取智能体运行时资源的 Context。
-        
-        ⚠️ 重要：该方法仅获取已存在的 Context，不会自动创建。
-        必须在调用 MySandbox 之前，手动调用 init_remote_agent_resources() 确保 Context 已创建并上传资源。
-        
-        Returns:
-            ContextSync: 配置好的上下文同步对象
-            
-        Raises:
-            RuntimeError: 如果 Context 不存在
-        """
-        context_service: ContextService = self._agent_bay.context
-        logger.info("🔍 获取智能体资源上下文...")
-
-        # 尝试获取已存在的 Context（不自动创建）
-        get_result = context_service.get(CONTEXT_NAME_OF_AGENT_RESOURCES, create=False)
-
-        if not get_result.success or not get_result.context:
-            error_msg = get_result.error_message if get_result.error_message else "未找到上下文"
-            logger.error(
-                f"❌ 智能体资源上下文 '{CONTEXT_NAME_OF_AGENT_RESOURCES}' 不存在！\n"
-                f"   错误信息: {error_msg}\n"
-                f"   解决方案: 请在创建 MySandbox 实例之前调用 init_remote_agent_resources()\n"
-                f"   示例:\n"
-                f"       from src.utils.my_sandbox import init_remote_agent_resources\n"
-                f"       init_remote_agent_resources()  # 先初始化上下文\n"
-                f"       sandbox = MySandbox(task_name='...')  # 再创建沙盒"
-            )
-            raise RuntimeError(
-                f"未找到智能体资源上下文 '{CONTEXT_NAME_OF_AGENT_RESOURCES}'。"
-                f"请在创建 MySandbox 之前调用 init_remote_agent_resources()。"
-                f"错误信息: {error_msg}"
-            )
-
-        agent_resources_context = get_result.context
-        logger.info(f"✅ 智能体资源上下文加载成功, SDKCtx ID: {agent_resources_context.id}")
-        return ContextSync.new(agent_resources_context.id, CONTEXT_MOUNT_PATH_OF_AGENT_RESOURCES, SyncPolicy.default())
+        # 会话检查缓存机制，避免频繁调用 API
+        self._last_session_check_time = 0
+        self._session_check_interval = 60  # 60秒内不重复检查会话有效性（平衡防护与性能）
+        self._session_check_cache_valid = False  # 缓存是否有效
 
     def _get_task_context_sync(self) -> ContextSync | None:
-        """获取或创建当前任务的 Context。
+        """获取或创建当前任务的 Context。将self.task_name作为访问存储盒的标识符。
         
         Returns:
             ContextSync | None: 如果存在 task_name，返回配置好的上下文同步对象；否则返回 None
@@ -469,7 +243,9 @@ class MySandbox(BaseSandbox):
             logger.info(f"✅ 新任务上下文创建成功: {task_context.id}, 任务名: {self.task_name}")
 
         # 确定该 context 的挂载路径
-        context_mount_path = f"{CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK}/{self.task_name}"
+        context_mount_path = f"{CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK}/{self._task_name_snake_case}"
+        # ⭐ 保存 context ID，供外部访问
+        self._task_context_box_id = task_context.id
         return ContextSync.new(task_context.id, context_mount_path)
 
     def _get_context_syncs(self) -> list[ContextSync]:
@@ -480,13 +256,7 @@ class MySandbox(BaseSandbox):
         """
         my_context_syncs = []
 
-        # 不再这么做，而是采用组合式后端，基于路径前缀，将文件操作路由到不同的后端！
-
-        # # 1. 添加智能体运行时资源 context
-        # agent_resources_sync = self._get_agent_resources_context_sync()
-        # my_context_syncs.append(agent_resources_sync)
-
-        # 2. 添加任务 context（如果存在 task_name）
+        # 1. 添加任务 context（如果存在 task_name）
         task_sync = self._get_task_context_sync()
         if task_sync is not None:
             my_context_syncs.append(task_sync)
@@ -542,10 +312,17 @@ class MySandbox(BaseSandbox):
         logger.info(
             f"✅ 会话创建成功, SessionId={self._session.session_id}, 空闲超时={self._idle_timeout}s")
 
-    def check_session(self):
+    def check_session(self, max_retries: int = 3, backoff_factor: float = 1.0):
         """ 检查会话有效性，如未创建则初始化（失效则抛致命错误）
         
         ⭐ 关键修复：使用双重检查锁定模式（Double-Checked Locking）防止并发竞态条件
+        ⭐ 新增优化：
+          1. 添加指数退避重试机制处理 LOCK_FAILED 错误
+          2. 添加会话检查缓存，5秒内不重复调用 API
+        
+        Args:
+            max_retries: 最大重试次数，默认3次
+            backoff_factor: 退避因子，用于计算等待时间，默认1.0秒
         
         工作原理：
         1. 第一次检查（不加锁）：如果会话已存在，直接验证并返回（高性能路径）
@@ -556,26 +333,56 @@ class MySandbox(BaseSandbox):
             RuntimeError: 会话已失效，程序必须终止
         """
         logger.info(f"🔍 检查会话有效性: {self._session_id}")
+
+        # ===== 优化1：会话检查缓存机制 =====
+        current_time = time.time()
+        if (self._session is not None and
+                self._session_check_cache_valid and
+                current_time - self._last_session_check_time < self._session_check_interval):
+            logger.debug(f"⚡ 使用缓存的会话状态（距离上次检查 {current_time - self._last_session_check_time:.1f}秒）")
+            return
+
         # ===== 快速路径：如果会话已存在，直接验证有效性（避免不必要的锁竞争）=====
         if self._session is not None:
-            info_result = self._session.info()
+            # ⭐ 新增：带重试机制的会话检查
+            for attempt in range(max_retries):
+                try:
+                    info_result = self._session.info()
 
-            if info_result.success:
-                # 会话正常，无需操作
-                logger.info(f"✅ 会话 {self._session_id}  仍然有效，因为session.info()返回成功信息！")
-                return
+                    if info_result.success:
+                        # 会话正常，更新缓存
+                        self._last_session_check_time = time.time()
+                        self._session_check_cache_valid = True
+                        logger.info(f"✅ 会话 {self._session_id}  仍然有效，因为session.info()返回成功信息！")
+                        return
 
-            # 会话已被云端自动释放，这是致命错误！
-            logger.error(
-                f"❌ [致命错误] 会话 {self._session_id} 已被云端自动释放！\n"
-                f"   原因: {info_result.error_message}\n"
-                f"   此错误不可恢复 - 开发流程必须终止。"
-            )
-            raise RuntimeError(
-                f"[致命错误] 任务 '{self.task_name}' 的会话已被 AgentBay 云端自动释放。\n"
-                f"这通常发生在会话超过空闲超时时间 ({self._idle_timeout}s) 时。\n"
-                f"开发流程无法继续。请使用新会话重新启动。"
-            )
+                    # 会话已被云端自动释放，这是致命错误！
+                    logger.error(
+                        f"❌ [致命错误] 会话 {self._session_id} 已被云端自动释放！\n"
+                        f"   原因: {info_result.error_message}\n"
+                        f"   此错误不可恢复 - 开发流程必须终止。"
+                    )
+                    raise RuntimeError(
+                        f"[致命错误] 任务 '{self.task_name}' 的会话已被 AgentBay 云端自动释放。\n"
+                        f"这通常发生在会话超过空闲超时时间 ({self._idle_timeout}s) 时。\n"
+                        f"开发流程无法继续。请使用新会话重新启动。"
+                    )
+
+                except Exception as e:
+                    error_msg = str(e)
+                    # 检查是否是 LOCK_FAILED 错误
+                    if "LOCK_FAILED" in error_msg and attempt < max_retries - 1:
+                        wait_time = backoff_factor * (2 ** attempt)
+                        logger.warning(
+                            f"⚠️  会话锁冲突 (尝试 {attempt + 1}/{max_retries})，{wait_time:.1f}秒后重试...\n"
+                            f"   错误: {error_msg}"
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # 非 LOCK_FAILED 错误或已达到最大重试次数，重新抛出异常
+                        logger.error(f"❌ 会话检查失败: {error_msg}")
+                        raise
 
         # ===== 慢速路径：需要初始化，使用锁保护 =====
         with self._session_lock:
@@ -583,6 +390,9 @@ class MySandbox(BaseSandbox):
             # （可能在你等待锁的过程中，其他线程已经完成了初始化）
             if self._session is not None:
                 logger.debug("⏳ 其他线程已在等待锁期间完成初始化，直接复用")
+                # 更新缓存时间
+                self._last_session_check_time = time.time()
+                self._session_check_cache_valid = True
                 return
 
             # ⭐ 到这里，确定只有当前线程在执行初始化（锁的互斥性保证）
@@ -595,6 +405,9 @@ class MySandbox(BaseSandbox):
             try:
                 self._initialize_session()
                 logger.debug("✅ 会话初始化完成")
+                # 初始化成功后，更新缓存
+                self._last_session_check_time = time.time()
+                self._session_check_cache_valid = True
             except Exception as e:
                 logger.error(f"❌ 会话初始化失败: {e}")
                 raise
@@ -608,8 +421,10 @@ class MySandbox(BaseSandbox):
         """Execute a command in the sandbox and return ExecuteResponse.
         
         ⭐ 关键修复：确保云端 Python 脚本使用 UTF-8 编码执行
+        ⭐ 懒检查策略：不主动检查会话，让操作本身验证会话有效性
         """
-        self.check_session()  # 获取或创建有效会话
+        # ⭐ 移除主动检查：self.check_session()
+        # 如果会话未初始化或已失效，下面的 API 调用会自然抛出异常
         try:
             # Convert timeout from seconds (protocol) to milliseconds (AgentBay)
             timeout_ms = int(timeout * 1000) if timeout is not None else None
@@ -620,7 +435,7 @@ class MySandbox(BaseSandbox):
             if 'python' in command.lower():
                 # 在命令前添加 PYTHONUTF8=1，确保 Python 使用 UTF-8 编码
                 command = f"PYTHONUTF8=1 {command}"
-                logger.debug(f"🔧 Added PYTHONUTF8=1 to Python command")
+                logger.debug(f"🔧 已为 Python 命令添加 UTF-8 编码环境变量")
 
             # agentbay execute工具默认50秒超时
             result = self._session.command.execute_command(command, timeout_ms=timeout_ms)
@@ -635,9 +450,10 @@ class MySandbox(BaseSandbox):
                 truncated=False
             )
         except Exception as e:
-            logger.error(f"❌ Command execution failed: {e}")
+            error_msg = str(e)
+            logger.error(f"❌ AgentBay 沙盒命令执行失败: {error_msg}")
             return ExecuteResponse(
-                output=f"Error executing command: {str(e)}",
+                output=f"Error executing command: {error_msg}",
                 exit_code=1,
                 truncated=False
             )
@@ -647,16 +463,14 @@ class MySandbox(BaseSandbox):
         
         ⭐ 优化：使用 AgentBay 原生的 upload_file() API，而不是 write_file()
         通过临时文件桥接 bytes → 本地文件 → 云端
+        ⭐ 懒检查策略：不主动检查会话，让操作本身验证会话有效性
         """
-        self.check_session()  # 获取或创建有效会话
+        # ⭐ 移除主动检查：self.check_session()
         responses = []
-        import tempfile
-        import os
-
         for file_path, content in files:
             temp_file_path = None
             try:
-                logger.debug(f"📤 Uploading file: {file_path} ({len(content)} bytes)")
+                logger.debug(f"📤 正在上传文件: {file_path} ({len(content)} 字节)")
 
                 # 确保父目录存在
                 parent_dir = str(Path(file_path).parent)
@@ -675,23 +489,22 @@ class MySandbox(BaseSandbox):
                 )
 
                 if upload_result.success:
-                    logger.debug(f"✅ Upload successful: {file_path}")
+                    logger.debug(f"✅ 上传成功: {file_path}")
                     responses.append(FileUploadResponse(path=file_path))
                 else:
-                    error_msg = getattr(upload_result, 'error', 'Unknown error')
-                    logger.error(f"❌ Upload failed: {file_path}, Error: {error_msg}")
+                    error_msg = getattr(upload_result, 'error', '未知错误')
+                    logger.error(f"❌ 上传失败: {file_path}, 错误: {error_msg}")
                     responses.append(FileUploadResponse(
                         path=file_path,
-                        error=f"Upload failed: {error_msg}"
+                        error=f"上传失败: {error_msg}"
                     ))
 
             except Exception as e:
-                logger.error(f"❌ Upload exception: {file_path}, Error: {e}")
-                import traceback
-                traceback.print_exc()
+                error_msg = str(e)
+                logger.error(f"❌ AgentBay 沙盒上传异常: {file_path}, 错误: {error_msg}")
                 responses.append(FileUploadResponse(
                     path=file_path,
-                    error=str(e)
+                    error=error_msg
                 ))
             finally:
                 # 清理临时文件
@@ -708,16 +521,14 @@ class MySandbox(BaseSandbox):
         
         ⭐ 优化：使用 AgentBay 原生的 download_file() API，而不是 read_file()
         通过临时文件桥接 云端 → 本地文件 → bytes
+        ⭐ 懒检查策略：不主动检查会话，让操作本身验证会话有效性
         """
-        self.check_session()  # 获取或创建有效会话
+        # ⭐ 移除主动检查：self.check_session()
         responses = []
-        import tempfile
-        import os
-
         for file_path in paths:
             temp_file_path = None
             try:
-                logger.debug(f"📥 Downloading file: {file_path}")
+                logger.debug(f"📥 正在下载文件: {file_path}")
 
                 # ⭐ 关键优化：创建临时文件，使用 AgentBay 原生 download_file API
                 with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.tmp') as temp_file:
@@ -734,26 +545,25 @@ class MySandbox(BaseSandbox):
                     with open(temp_file_path, 'rb') as f:
                         content = f.read()
 
-                    logger.debug(f"✅ Download successful: {file_path} ({len(content)} bytes)")
+                    logger.debug(f"✅ 下载成功: {file_path} ({len(content)} 字节)")
                     responses.append(FileDownloadResponse(
                         path=file_path,
                         content=content
                     ))
                 else:
-                    error_msg = getattr(download_result, 'error', 'Unknown error')
-                    logger.error(f"❌ Download failed: {file_path}, Error: {error_msg}")
+                    error_msg = getattr(download_result, 'error', '未知错误')
+                    logger.error(f"❌ 下载失败: {file_path}, 错误: {error_msg}")
                     responses.append(FileDownloadResponse(
                         path=file_path,
-                        error=f"Download failed: {error_msg}"
+                        error=f"下载失败: {error_msg}"
                     ))
 
             except Exception as e:
-                logger.error(f"❌ Download exception: {file_path}, Error: {e}")
-                import traceback
-                traceback.print_exc()
+                error_msg = str(e)
+                logger.error(f"❌ AgentBay 沙盒下载异常: {file_path}, 错误: {error_msg}")
                 responses.append(FileDownloadResponse(
                     path=file_path,
-                    error=str(e)
+                    error=error_msg
                 ))
             finally:
                 # 清理临时文件
@@ -764,6 +574,15 @@ class MySandbox(BaseSandbox):
                         logger.warning(f"⚠️ Failed to clean up temp file: {temp_file_path}, Error: {e}")
 
         return responses
+
+    @property
+    def task_context_box_id(self) -> str | None:
+        """获取任务上下文盒子的ID。
+        
+        Returns:
+            str | None: 任务上下文盒子的ID，如果未设置则返回None
+        """
+        return self._task_context_box_id
 
     @property
     def id(self) -> str:
@@ -818,15 +637,22 @@ class MySandbox(BaseSandbox):
             return False
 
         try:
-            # 构造云端挂载路径
-            cloud_path = f"{CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK}/{self.task_name}"
+            # ⭐ 关键修复：构造云端挂载路径，处理空格和大小写问题
+            # AgentBay 可能会将任务名中的空格转换为下划线，或进行其他格式化
+            # 因此需要尝试多种可能的路径格式
+
+            # 原始路径（直接使用 task_name）
+
+            # ⭐ 关键修复：使用蛇形命名的任务名构造云端路径
+            cloud_path = f"{CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK}/{self._task_name_snake_case}"
             logger.info(f"📂 云端源路径: {cloud_path}")
 
             # 确保本地目录存在
             local_download_dir.mkdir(parents=True, exist_ok=True)
 
-            # 递归下载所有文件
+            # 先尝试原始路径
             downloaded_count = self._download_recursive(cloud_path, local_download_dir)
+
             logger.info(f"✅ 下载完成: 共 {downloaded_count} 个文件")
             logger.info(f"✅ 成功下载 {downloaded_count} 个文件到: {local_download_dir}")
             return True
@@ -862,8 +688,9 @@ class MySandbox(BaseSandbox):
 
             for entry in list_result.entries:
                 cloud_path = entry.path
-                # 计算相对路径
-                relative_path = Path(cloud_path).relative_to(CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK)
+                # ⭐ 关键修复：使用蛇形命名的任务名构造基础路径，用于计算相对路径
+                base_path = f"{CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK}/{self._task_name_snake_case}"
+                relative_path = Path(cloud_path).relative_to(base_path)
 
                 # ⭐ 检查是否应该跳过
                 if _should_skip_path(relative_path):

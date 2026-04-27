@@ -7,6 +7,8 @@
 # 以此显式指明被调用的智能体专家可以使用，leader所用的那个thread id，以便它们在leader多次调用assign工具多次分配任务之间保持记忆。
 # 即通过assign调用的团队专家，可以在多次assign间保持记忆。
 import logging
+from typing import Any, Sequence, cast, Callable
+
 from deepagents import CompiledSubAgent
 from deepagents.middleware.subagents import _SubagentSpec, _EXCLUDED_STATE_KEYS
 from langchain.agents.middleware.types import AgentMiddleware, ContextT, ModelRequest, ModelResponse, ResponseT
@@ -15,9 +17,6 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 from pydantic import BaseModel, Field
-from typing import Any, Sequence, cast, Callable
-
-from src.remote_dev_team.dev_team_wo_task_context.team_experts import team_experts_list
 
 
 # 3. 需求产生原因：
@@ -47,7 +46,7 @@ class AssignToolSchema(BaseModel):
     """Assign工具的输入参数Schema，简化为任务描述和专家名称。"""
     description: str = Field(
         description=("A concise description of the task to be assigned to the expert agent."
-                     "如果是指派专家智能体产出文档交付物，不必明确指明文档的内容应该包含哪些章节，相信你的团队成员是专业的！")
+                     "如果是指派专家智能体产出文档交付物，不必明确指明文档的内容应该包含哪些章节，相信你的团队成员的老道经验！")
     )
     expert_name: str = Field(
         description="The name of the expert agent to assign the task to (e.g., 'David', 'Eva', 'Alice')."
@@ -58,17 +57,16 @@ ASSIGN_TOOL_DESCRIPTION = """Assign a task to a specific expert agent in the dev
 
 This tool allows you to assign specific development tasks to specialized team members.
 The expert agent will execute the task and report the results.
-Besides, you can also just use it as a communication tool.
+Besides, you can also just use it as a communication tool between you and the other.
 
 Available experts:
 {available_experts}
 
 Usage notes:
 1. Be clear and specific about what you want the expert to accomplish. 
-2. Some expert agents can maintain context across multiple assignments.
+2. All expert agents can maintain context across multiple assignments.
 3. Use this tool to leverage the specialized skills of each team member.
-4. 目前不支持针对同一专家智能体并行化调用assign，你不能同时通过assign调用同一个专家智能体。
-5."""  # noqa: E501
+4. 目前不支持针对同一专家智能体并行化调用assign，你不能同时多次调用assign指派同一个专家智能体。"""  # noqa: E501
 
 ASSIGN_SYSTEM_PROMPT = """## `assign` (team collaboration tool)
 
@@ -77,13 +75,13 @@ You have access to an `assign` tool to assign tasks to specialized expert agents
 When to use the assign tool:
 - When a task requires specialized expertise (coding, testing, product management, etc.)
 - When you need to assign a specific development (stage) task to a team member
-- When you want to discuss or debate with one of your team members
+- When you want to discuss or debate with one of your team members, use it as a communication tool
 
 How to use:
 1. Specify the task clearly in the `description` parameter
 2. Choose the appropriate expert by their `expert_name`
 
-Remember: Some expert agents maintain memory across multiple assignments, so they can build on previous work."""  # noqa: E501
+Remember: All expert agents maintain memory across multiple assignments, so they can build on previous work."""  # noqa: E501
 
 
 def _build_assign_tool(
@@ -223,7 +221,7 @@ class AssignMiddleware(AgentMiddleware[Any, ContextT, ResponseT]):
 
         # 如果没有提供专家列表，使用默认的team_experts
         if experts is None:
-            experts = team_experts_list
+            raise ValueError("Please provide a list of experts  for AssignMiddleware Instance")
 
         # 将CompiledSubAgent转换为内部规格格式
         expert_specs: list[_SubagentSpec] = []

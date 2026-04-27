@@ -1,6 +1,7 @@
 import logging
-import yaml
 from dataclasses import dataclass
+
+import yaml
 
 from src.paths import DATASETS_PATH
 
@@ -64,8 +65,8 @@ def load_dataset(file_path) -> SoftwareDevDataset:
     dataset = SoftwareDevDataset.from_dict(loaded_data)
 
     logger.info(f"数据集名称: {dataset.name})")
-    logger.info("数据集描述: {dataset.description}")
-    logger.info("数据集任务数量: {len(dataset.tasks)}")
+    logger.info(f"数据集描述: {dataset.description}")
+    logger.info(f"数据集任务数量: {len(dataset.tasks)}")
     return dataset
 
 

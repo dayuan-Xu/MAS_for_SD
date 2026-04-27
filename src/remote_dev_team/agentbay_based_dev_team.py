@@ -1,6 +1,7 @@
+import logging
 from pathlib import Path
 
-import logging
+import yaml
 from deepagents import CompiledSubAgent, SubAgentMiddleware, create_deep_agent
 from deepagents.backends import CompositeBackend
 from deepagents.middleware import FilesystemMiddleware, SkillsMiddleware
@@ -12,27 +13,45 @@ from src.Tools import get_current_time, internet_search
 from src.config.llm import LLMs
 from src.config.settings import settings
 from src.custom_middleware.assign import AssignMiddleware
-from src.paths import AGENTBAY_SYSTEM_PROMPTS_FILES, LOCAL_PROJECTS_WAREHOUSE_FOR_REMOTE_TASK_RESULT
+from src.paths import AGENTBAY_SYSTEM_PROMPTS_FILES, LOCAL_PROJECTS_WAREHOUSE_FOR_REMOTE_TASK_RESULT, USER_SOFTWARE_DEV_TASKS_PATH
 from src.remote_dev_team.agent_config import LEADER_SKILL_PATH, ENGINEER_SKILL_PATH, QA_ENGINEER_SKILL_PATH, \
-    my_composite_backend_routes
-from src.remote_dev_team.shared_middleware import (
-    todo_list_middleware,
-    summarization_middleware, retry_middleware, )
-from src.utils.my_sandbox import (
-    MySandbox,
-)
+    my_composite_backend_routes, MY_WRITE_FILE_TOOL_DESCRIPTION
+from src.remote_dev_team.shared_middleware import todo_list_middleware, summarization_middleware, retry_middleware
+from src.utils.my_sandbox import MySandbox
 from src.utils.roles_prompt_manager import get_system_prompt
 
 logger = logging.getLogger(__name__)
 
-MY_WRITE_FILE_TOOL_DESCRIPTION = """
-Writes to a new file in the filesystem.
-Usage:
-- The write_file tool will create the a new file.
-- Prefer to edit existing files (with the edit_file tool) over creating new ones when possible.
-- **分段创建长文档**：禁止一次性调用该工具生成长文档，而是应该先调用该工具一次以创建文档骨架（包含文档元数据和所有章节标题），之后再多次调用edit_file tool逐个章节填充内容，每次将章节标题替换为完整章节。 
-- 若不知道当前创建的是否为长文档，就默认使用分段创建方式。            
-"""
+
+# ========== TraceableTask 数据类 ==========
+
+from dataclasses import dataclass
+from src.utils.datasets import Task
+
+
+@dataclass
+class TraceableTask:
+    """可追踪的任务对象，用于保存任务启动记录。"""
+    thread_id: str
+    task_context_box_id: str
+    task: Task
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """从字典创建对象(用于 YAML 反序列化)"""
+        return cls(
+            thread_id=data['thread_id'],
+            task_context_box_id=data['task_context_box_id'],
+            task=Task.from_dict(data['task'])
+        )
+
+    def to_dict(self):
+        """将对象转换为字典(用于 YAML 序列化)"""
+        return {
+            'thread_id': self.thread_id,
+            'task_context_box_id': self.task_context_box_id,
+            'task': self.task.to_dict()
+        }
 
 
 class AgentBayBasedDevTeam:
@@ -157,6 +176,7 @@ class AgentBayBasedDevTeam:
             tools=[get_current_time, internet_search],
             system_prompt=sys_prompt,
             middleware=[retry_middleware],
+            checkpointer=True,
             backend=self.composite_backend,
             name=f"{expert_name}_{role_name.title().replace('_', '')}"  # langchain在给AIMessage添加name属性时使用
         )
@@ -173,7 +193,7 @@ class AgentBayBasedDevTeam:
         return self._create_deep_agent_expert(
             role_name="product_manager",
             expert_name="Alice",
-            expert_description="一名产品经理，可根据需求描述，交付一份产品需求文档。不能在多次工作分配间保持记忆。",
+            expert_description="一名产品经理，擅长根据需求描述，交付产品需求文档。",
         )
 
     def _create_architect(self):
@@ -181,7 +201,7 @@ class AgentBayBasedDevTeam:
         return self._create_deep_agent_expert(
             role_name="architect",
             expert_name="Bob",
-            expert_description="一名架构师，可根据产品需求文档，交付一份软件架构设计文档。不能在多次工作分配间保持记忆。",
+            expert_description="一名架构师，擅长根据产品需求文档，交付软件架构设计文档。",
         )
 
     def _create_project_manager(self):
@@ -189,7 +209,7 @@ class AgentBayBasedDevTeam:
         return self._create_deep_agent_expert(
             role_name="project_manager",
             expert_name="Cindy",
-            expert_description="一名项目经理，可根据软件架构设计文档，交付软件详细设计文档。不能在多次工作分配间保持记忆。",
+            expert_description="一名项目经理，擅长根据软件架构设计文档，交付软件详细设计文档。",
         )
 
     def _create_engineer(self):
@@ -332,8 +352,8 @@ class AgentBayBasedDevTeam:
         return self.leader.astream(input, config=config, stream_mode=stream_mode, subgraphs=subgraphs, version=version,
                                    **kwargs)
 
-    def cleanup_and_download(self, success: bool = True):
-        """清理资源并下载成果物到本地。
+    def download_and_cleanup(self, success: bool = True):
+        """先下载成果物到本地，后清理会话资源。
             
         Args:
             success: 任务是否成功完成，用于日志记录
@@ -362,3 +382,41 @@ class AgentBayBasedDevTeam:
         except Exception as e:
             logger.error(f"清理会话失败: {e}", exc_info=True)
             logger.warning("会话可能已过期，跳过清理")
+
+    def save_traceable_task_to_file(self, thread_id: str, task: Task):
+        """保存任务启动记录到 YAML 文件。
+        
+        ⭐ 优化：如果文件已存在，则跳过写入，避免重复保存
+        
+        Args:
+            thread_id: 线程ID
+            task: 任务对象
+        """
+        # 从 sandbox 获取 task_context_box_id
+        task_context_box_id = self.sandbox.task_context_box_id
+        if not task_context_box_id:
+            logger.warning("⚠️ sandbox.task_context_box_id 为空，无法保存任务记录")
+            return
+        
+        # 创建 TraceableTask 实例
+        traceable_task = TraceableTask(
+            thread_id=thread_id,
+            task_context_box_id=task_context_box_id,
+            task=task
+        )
+        
+        # 构造文件路径
+        task_file_path = USER_SOFTWARE_DEV_TASKS_PATH / f"{traceable_task.task.name}.yaml"
+
+        # ⭐ 关键优化：检查文件是否已存在
+        if task_file_path.exists():
+            logger.info(f"⏭️ 任务启动记录已存在，跳过保存: {task_file_path}")
+            return
+
+        # 确保父目录存在
+        task_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # 保存到 YAML 文件
+        with open(task_file_path, 'w', encoding='utf-8') as f:
+            yaml.dump(traceable_task.to_dict(), f, allow_unicode=True)
+            logger.info(f"✅ 任务启动记录已保存: {task_file_path}")

@@ -1,11 +1,13 @@
-import httpcore
-import httpx
 import logging
 import random
+import sys
 import time
+from typing import Callable
+
+import httpcore
+import httpx
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
 from openai import InternalServerError, APIError
-from typing import Callable
 
 
 class MyRetryMiddleware(AgentMiddleware):
@@ -160,7 +162,7 @@ class MyRetryMiddleware(AgentMiddleware):
                 if attempt == 0:
                     self.logger.info("📡 [LLM调用] 开始第1次尝试...")
                     # ⭐ 强制刷新日志，确保立即输出
-                    import sys
+
                     for h in self.logger.handlers:
                         h.flush()
                     sys.stdout.flush()
@@ -173,7 +175,6 @@ class MyRetryMiddleware(AgentMiddleware):
                     self.logger.warning(f"🔄 RetryMiddleware - 第 {attempt}/{self.max_retries} 次重试...")
                     self.logger.warning(separator)
                     # 强制刷新所有handler
-                    import sys
                     for h in self.logger.handlers:
                         h.flush()
                     sys.stdout.flush()
@@ -182,7 +183,7 @@ class MyRetryMiddleware(AgentMiddleware):
 
             except Exception as e:
                 last_exception = e
-                
+
                 # ⭐ 关键：记录所有捕获的异常，便于调试
                 self.logger.error(f"⚠️ 捕获到异常类型: {type(e).__name__}")
                 self.logger.error(f"⚠️ 异常信息: {e}")
@@ -218,9 +219,8 @@ class MyRetryMiddleware(AgentMiddleware):
                 self.logger.warning(f"⚠️  RetryMiddleware - {error_desc}")
                 self.logger.warning(f"⏱️  等待 {wait_time:.2f} 秒后重试... (第{attempt + 1}/{self.max_retries}次)")
                 self.logger.warning(separator)
-                
+
                 # ⭐ 强制刷新日志
-                import sys
                 for h in self.logger.handlers:
                     h.flush()
                 sys.stdout.flush()

@@ -1,62 +1,15 @@
 import logging
 import uuid
-import yaml
-from dataclasses import dataclass
+from typing import cast
+
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import StreamPart
-from typing import cast
 
-from src.paths import USER_SOFTWARE_DEV_TASKS_PATH
 from src.remote_dev_team.agentbay_based_dev_team import AgentBayBasedDevTeam
 from src.utils.datasets import Task
-from src.utils.my_sandbox import MySandbox
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class TraceableTask:
-    thread_id: str
-    task: Task
-
-    @classmethod
-    def from_dict(cls, data: dict):
-        """从字典创建对象(用于 YAML 反序列化)"""
-        return cls(
-            thread_id=data['thread_id'],
-            task=Task.from_dict(data['task'])
-        )
-
-    def to_dict(self):
-        """将对象转换为字典(用于 YAML 序列化)"""
-        return {
-            'thread_id': self.thread_id,
-            'task': self.task.to_dict()
-        }
-
-
-def save_traceable_task_to_file(traceable_task: TraceableTask):
-    """保存任务启动记录到 YAML 文件。
-    
-    ⭐ 优化：如果文件已存在，则跳过写入，避免重复保存
-    
-    Args:
-        traceable_task: 可追踪的任务对象
-    """
-    task_file_path = USER_SOFTWARE_DEV_TASKS_PATH / f"{traceable_task.task.name}.yaml"
-
-    # ⭐ 关键优化：检查文件是否已存在
-    if task_file_path.exists():
-        logger.info(f"⏭️ 任务启动记录已存在，跳过保存: {task_file_path}")
-        return
-
-    # 确保父目录存在
-    task_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(task_file_path, 'w', encoding='utf-8') as f:
-        yaml.dump(traceable_task.to_dict(), f, allow_unicode=True)
-        logger.info(f"✅ 任务启动记录已保存: {task_file_path}")
 
 
 # 自动化软件开发
@@ -96,8 +49,8 @@ def multi_turn_conversation_with_fixed_human_input(task: Task, dev_team: AgentBa
     """
     # 1 保存负责当前任务的thread_id到文件，方便后续查看具体运行情况
     thread_id = str(uuid.uuid4())
-    traceable_task = TraceableTask(thread_id=thread_id, task=task)
-    save_traceable_task_to_file(traceable_task)
+    # ⭐ 调用 dev_team 的方法保存任务记录
+    dev_team.save_traceable_task_to_file(thread_id=thread_id, task=task)
 
     # 2 设定运行时配置
     task_name = task.name
@@ -120,7 +73,7 @@ def multi_turn_conversation_with_fixed_human_input(task: Task, dev_team: AgentBa
         while True:
             # 第一次用户输入
             if input_text is None:
-                input_text = f"针对一个软件需求完成自动化开发，禁止请求任何用户反馈。\n需求描述如下：\n{task_description}"
+                input_text = f"针对一个软件需求完成自动化开发。\n软件需求描述如下：\ntask_name:{task_name}\ntask_description:{task_description}"
             else:
                 # 或者上个ReAct循环结束后，等待用户本轮输入
                 react_loop_count = react_loop_count + 1
@@ -172,12 +125,14 @@ def multi_turn_conversation_with_fixed_human_input(task: Task, dev_team: AgentBa
     finally:
         # ⭐ 关键：无论成功还是失败，都会执行这里
         logger.info("🧹 进入清理阶段，开始清理资源和下载成果物...")
-        dev_team.cleanup_and_download(success=task_success)
+        dev_team.download_and_cleanup(success=task_success)
         logger.info("✅ 清理阶段完成")
 
 
 # 一次自动化开发
 def automatic_dev(task: Task):
+    from src.utils.my_sandbox import MySandbox
+    
     # 创建与当前任务关联的沙盒实例
     sandbox = MySandbox(task_name=task.name)
 
