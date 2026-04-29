@@ -160,7 +160,10 @@ class MyRetryMiddleware(AgentMiddleware):
             try:
                 # 首次尝试或重试后调用 handler
                 if attempt == 0:
-                    self.logger.info("📡 [LLM调用] 开始第1次尝试...")
+                    separator = "=" * 83
+                    self.logger.info(separator)
+                    self.logger.info("📡 [MyRetryMiddleware] 开始第1次LLM调用尝试...")
+                    self.logger.info(separator)
                     # ⭐ 强制刷新日志，确保立即输出
 
                     for h in self.logger.handlers:
@@ -172,7 +175,7 @@ class MyRetryMiddleware(AgentMiddleware):
                     # 重试时打印日志
                     separator = "=" * 83
                     self.logger.warning(separator)
-                    self.logger.warning(f"🔄 RetryMiddleware - 第 {attempt}/{self.max_retries} 次重试...")
+                    self.logger.warning(f"🔄 [MyRetryMiddleware] - 第 {attempt}/{self.max_retries} 次重试...")
                     self.logger.warning(separator)
                     # 强制刷新所有handler
                     for h in self.logger.handlers:

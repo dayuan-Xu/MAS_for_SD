@@ -1,6 +1,7 @@
 # 统计智能体在某个thread_id下的所有运行的token总用量的中间件
 # 实现方法：在after_agent这个节点钩子函数中读取agentstate中的messages并统一计算其中的AIMessage的token usage
 # 或者直接不实现而是直接从langsmith查看
+import logging
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langgraph.runtime import Runtime
@@ -66,6 +67,10 @@ class StatisticsState(AgentState):
 class StatisticsMiddleware(AgentMiddleware[StatisticsState]):
     state_schema = StatisticsState
 
+    def __init__(self):
+        """初始化统计中间件"""
+        self.logger = logging.getLogger(__name__)
+
     # 每次智能体运行之后，都重新从第一条AI消息开始统计，到目前为止在该thread上的token用量。
     def after_agent(self, state: StatisticsState, runtime: Runtime) -> dict[str, Any] | None:
         input_sum = 0
@@ -74,9 +79,18 @@ class StatisticsMiddleware(AgentMiddleware[StatisticsState]):
         for msg in state['messages']:
             if msg['type'] == 'ai' and msg['usage_metadata']:
                 token_usage_info = msg['usage_metadata']
-                input_sum += token_usage_info['input_token_s']
+                input_sum += token_usage_info['input_tokens']
                 output_sum += token_usage_info['output_tokens']
                 total_sum += token_usage_info['total_tokens']
+
+        # 记录token统计信息
+        separator = "=" * 80
+        self.logger.info(separator)
+        self.logger.info("📊 [StatisticsMiddleware] Token 使用统计")
+        self.logger.info(f"   输入 Tokens: {input_sum}")
+        self.logger.info(f"   输出 Tokens: {output_sum}")
+        self.logger.info(f"   总计 Tokens: {total_sum}")
+        self.logger.info(separator)
 
         return {
             'input_tokens_sum': input_sum,

@@ -1,4 +1,5 @@
 import uuid
+
 from deepagents import SubAgentMiddleware
 from deepagents.middleware import SkillsMiddleware
 from langchain.agents import create_agent
@@ -8,6 +9,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from src.Tools import get_current_time
 from src.config.llm import LLMs
 from src.config.settings import settings
+from src.custom_middleware.agent_activity_monitor import AgentActivityMonitor
 from src.custom_middleware.dev_progress import TeamLeaderMiddleware
 from src.custom_middleware.my_middleware_prompts import MY_TASK_PROMPT, \
     MY_TASK_TOOL_DESCRIPTION
@@ -30,12 +32,16 @@ llm = LLMs["minimax-m2.7"] if settings.USE_PAID_LLM_API else LLMs["gpt-5-mini"]
 
 team_leader_middleware = TeamLeaderMiddleware()
 
+# ⭐ 创建活动监控中间件（放在最外层）
+activity_monitor = AgentActivityMonitor()
+
 leader_sys_prompt = get_system_prompt("team_leader", prompts_dir=AGENT_SYSTEM_PROMPTS_FILES)
 leader = create_agent(
     model=llm,
     tools=[get_current_time],
     system_prompt=leader_sys_prompt,
     middleware=[
+        activity_monitor,  # ⭐ 新增：最外层，监控所有活动
         todo_list_middleware,
         mySkillsMiddleware,
         filesystem_middleware,

@@ -12,11 +12,11 @@
 
     - 约定：`./`一般代指`/tmp/persistent/agent_workspace/`
 
-    - 从 Tim 处接收任务描述，确认项目工作空间：`./warehouse/{{workspace：当前项目工作空间}}/`
+    - 从 Tim 处接收任务描述，确认项目工作空间：`./warehouse/{{project_name：当前项目工作空间}}/`
 
-2. **阅读需求文档**：仔细阅读理解 `./warehouse/{{workspace}}/docs/产品需求.md`
+2. **阅读需求文档**：仔细阅读理解 `./warehouse/{{project_name}}/docs/产品需求.md`
 
-3. **架构设计文档创建/更新**：创建或更新在`./warehouse/{{workspace}}/docs/系统概要设计.md`，该文档须符合“文档标准“
+3. **架构设计文档创建/更新**：创建或更新在`./warehouse/{{project_name}}/docs/系统概要设计.md`，该文档须符合“文档标准“
 
 4. **提交评审**：
     - 完成后通知 Tim 进行交付物检查，比如"《系统概要设计.md》已完成/更新，请检查"

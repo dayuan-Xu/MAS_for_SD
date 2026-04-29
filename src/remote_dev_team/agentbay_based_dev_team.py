@@ -13,15 +13,16 @@ from src.Tools import get_current_time, internet_search
 from src.config.llm import LLMs
 from src.config.settings import settings
 from src.custom_middleware.assign import AssignMiddleware
-from src.paths import AGENTBAY_SYSTEM_PROMPTS_FILES, LOCAL_PROJECTS_WAREHOUSE_FOR_REMOTE_TASK_RESULT, USER_SOFTWARE_DEV_TASKS_PATH
+from src.paths import AGENTBAY_SYSTEM_PROMPTS_FILES, LOCAL_PROJECTS_WAREHOUSE_FOR_REMOTE_TASK_RESULT, \
+    USER_SOFTWARE_DEV_TASKS_PATH
 from src.remote_dev_team.agent_config import LEADER_SKILL_PATH, ENGINEER_SKILL_PATH, QA_ENGINEER_SKILL_PATH, \
     my_composite_backend_routes, MY_WRITE_FILE_TOOL_DESCRIPTION
-from src.remote_dev_team.shared_middleware import todo_list_middleware, summarization_middleware, retry_middleware
+from src.remote_dev_team.shared_middleware import todo_list_middleware, summarization_middleware, retry_middleware, \
+    agent_activity_monitor
 from src.utils.my_sandbox import MySandbox
 from src.utils.roles_prompt_manager import get_system_prompt
 
 logger = logging.getLogger(__name__)
-
 
 # ========== TraceableTask 数据类 ==========
 
@@ -52,6 +53,9 @@ class TraceableTask:
             'task_context_box_id': self.task_context_box_id,
             'task': self.task.to_dict()
         }
+
+
+checkpointer = MemorySaver()
 
 
 class AgentBayBasedDevTeam:
@@ -176,7 +180,7 @@ class AgentBayBasedDevTeam:
             tools=[get_current_time, internet_search],
             system_prompt=sys_prompt,
             middleware=[retry_middleware],
-            checkpointer=True,
+            # ⭐ 专家不需要 checkpointer，因为历史由 AssignMiddleware 的 experts_messages 管理
             backend=self.composite_backend,
             name=f"{expert_name}_{role_name.title().replace('_', '')}"  # langchain在给AIMessage添加name属性时使用
         )
@@ -233,7 +237,7 @@ class AgentBayBasedDevTeam:
                 summarization_middleware,
                 retry_middleware,
             ],
-            checkpointer=True,
+            # ⭐ 专家不需要 checkpointer，因为历史由 AssignMiddleware 的 experts_messages 管理
             name="David_Engineer",
         )
 
@@ -265,7 +269,7 @@ class AgentBayBasedDevTeam:
                 summarization_middleware,
                 retry_middleware,
             ],
-            checkpointer=True,
+            # ⭐ 专家不需要 checkpointer，因为历史由 AssignMiddleware 的 experts_messages 管理
             name="Eva_QA_Engineer",
         )
 
@@ -317,6 +321,7 @@ class AgentBayBasedDevTeam:
             tools=[get_current_time],
             system_prompt=leader_sys_prompt,
             middleware=[
+                agent_activity_monitor,
                 todo_list_middleware,  # 共享
                 skills_middleware,  # 专属
                 fs_middleware,  # 专属
@@ -325,6 +330,7 @@ class AgentBayBasedDevTeam:
                 summarization_middleware,  # 共享
                 retry_middleware,  # 共享
             ],
+            # ⭐ Leader 需要 checkpointer，用于保存自己的消息历史和 experts_messages
             checkpointer=MemorySaver(),
             name="Tim_Leader",
         )
@@ -358,7 +364,7 @@ class AgentBayBasedDevTeam:
         Args:
             success: 任务是否成功完成，用于日志记录
         """
-        logger.info(f"开始清理和下载 (success={success})")
+        logger.info(f"开始成果物下载和会话资源清理 (success={success})")
 
         # 1. 下载成果物
         if self.sandbox.task_name:
@@ -375,13 +381,7 @@ class AgentBayBasedDevTeam:
             logger.warning("sandbox.task_name 为空，跳过下载")
 
         # 2. 清理云端会话（无论下载是否成功都要执行）
-        logger.info("清理云端会话...")
-        try:
-            self.sandbox.cleanup()
-            logger.info("清理完成")
-        except Exception as e:
-            logger.error(f"清理会话失败: {e}", exc_info=True)
-            logger.warning("会话可能已过期，跳过清理")
+        self.sandbox.delete_session()
 
     def save_traceable_task_to_file(self, thread_id: str, task: Task):
         """保存任务启动记录到 YAML 文件。
@@ -397,14 +397,14 @@ class AgentBayBasedDevTeam:
         if not task_context_box_id:
             logger.warning("⚠️ sandbox.task_context_box_id 为空，无法保存任务记录")
             return
-        
+
         # 创建 TraceableTask 实例
         traceable_task = TraceableTask(
             thread_id=thread_id,
             task_context_box_id=task_context_box_id,
             task=task
         )
-        
+
         # 构造文件路径
         task_file_path = USER_SOFTWARE_DEV_TASKS_PATH / f"{traceable_task.task.name}.yaml"
 

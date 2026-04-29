@@ -1,9 +1,14 @@
+import logging
+from typing import cast
+
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Interrupt, Command, StreamPart
-from typing import cast
 
+from src.remote_dev_team.agentbay_based_dev_team import AgentBayBasedDevTeam
 from src.utils.my_sandbox import MySandbox
+
+logger = logging.getLogger(__name__)
 
 
 def get_human_decisions(input_interrupt: Interrupt) -> list[dict]:
@@ -49,7 +54,8 @@ def get_human_decisions(input_interrupt: Interrupt) -> list[dict]:
 
 
 # 运行给定的LangGraph，支持多轮对话（即每次人类输入引发一次ReAct循环，可以有多次人类对话直至人类输入exit）
-def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfig, sandbox: MySandbox | None = None):
+def multi_turn_conversation(agent: CompiledStateGraph | AgentBayBasedDevTeam, run_config: RunnableConfig,
+                            sandbox: MySandbox | None = None):
     """
     为DeepAgent设计的多轮对话，
     在values模式下流式输出父图、子图消息，流式输出版本version="v2"
@@ -85,7 +91,8 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
                 答：
                 Deep Agents 是基于 LangGraph 构建的，create_deep_agent 返回一个编译后的 LangGraph 可运行图。
                 LangGraph 的 最基本的ReAct 代理实现下，默认有 max_iterations 参数=25控制着step的上限，
-                在这种实现下，每一个step对应一次模型调用节点或工具调用节点
+                在这种实现下，每一个step对应一次模型调用节点或工具调用节点，注意某一个step可以有多个工具调用节点并行执行！
+                
                 默认 max_iterations=25，超过此步数上限会抛出 MaxIterationsExceededError 异常，而不是无限循环。
                 可以人为在invoke智能体时通过config指定：
                 result = agent.invoke(
@@ -94,11 +101,6 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
                         "recursion_limit": 10  # 最大 10 次 model-tool 循环
                     }
                 )
-
-                recursion_limit: int
-                "Maximum number of times a call can recurse.
-
-                If not provided, defaults to `25`."
                 """
                 for stream_part in agent.stream(input=agent_input, config=run_config, stream_mode=["values"],
                                                 subgraphs=True, version="v2"):
@@ -145,12 +147,13 @@ def multi_turn_conversation(agent: CompiledStateGraph, run_config: RunnableConfi
                     current_loop_ends_totally = True
 
         print("\n", "=" * 41, "✋多轮对话成功结束", "=" * 41, "\n")
+    except Exception as e:
+        logger.error("\n" + "=" * 41, "❌多轮对话异常结束" + "=" * 41 + "\n")
+        logger.error(e, exc_info=True)
     finally:
-        # ⭐ 关键修复：确保沙盒资源被正确清理
+        # 确保沙盒资源被正确清理
+        logger.info("多轮对话结束，开始删除沙盒实例维持的会话")
         if sandbox is not None:
-            print("\n🧹 正在清理沙盒资源...")
-            try:
-                sandbox.cleanup()
-                print("✅ 沙盒资源清理完成")
-            except Exception as e:
-                print(f"⚠️ 沙盒清理过程中出现异常: {e}")
+            sandbox.delete_session()
+        elif isinstance(agent, AgentBayBasedDevTeam) and agent.sandbox is not None:
+            agent.sandbox.delete_session()

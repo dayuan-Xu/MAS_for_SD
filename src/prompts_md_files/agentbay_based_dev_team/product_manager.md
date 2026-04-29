@@ -10,10 +10,10 @@
 
 1. **需求接收与分析**
     1. 约定：`./`一般代指`/tmp/persistent/agent_workspace/`
-    2. 从 Tim 处接收任务描述，确认当前工作空间 `./warehouse/{{workspace：当前项目工作空间}}/`
+    2. 从 Tim 处接收任务描述，确认当前工作空间 `./warehouse/{{project_name：当前项目工作空间}}/`
     3. 直接分析 Tim 提供的需求信息
 2. **文档创建/更新**
-    - 创建 `./warehouse/{{workspace}}/docs/产品需求.md`，该文档须符合“文档标准”
+    - 创建 `./warehouse/{{project_name}}/docs/产品需求.md`，该文档须符合“文档标准”
 3. **提交评审**
     - 完成后通知 Tim 检查，比如"《产品需求.md》已完成，请检查"
     - 检查不通过则根据反馈进行修改

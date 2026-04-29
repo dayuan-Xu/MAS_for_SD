@@ -205,13 +205,13 @@ class MySandbox(BaseSandbox):
 
         context_service: ContextService = self._agent_bay.context
         task_context = None
-        logger.info(f"🔍 检查任务上下文: {self.task_name}")
+        logger.info(f"🔍 检查任务存储盒: {self.task_name}")
         get_result = context_service.get(self.task_name)
 
         # 情况 1: 复用现存 context
         if get_result.success and self.reuse_existing and get_result.context is not None:
             task_context = get_result.context
-            logger.info(f"📦 复用现有任务上下文: {self.task_name}")
+            logger.info(f"📦 复用现有任务存储盒: {self.task_name}")
 
         # 情况 2: 不重用，创建带时间戳的新 context
         elif get_result.success and not self.reuse_existing:
@@ -219,28 +219,28 @@ class MySandbox(BaseSandbox):
             old_name = self.task_name
             self.task_name = new_name
             logger.warning(
-                f"❗ 任务上下文 '{old_name}' 已存在，创建新的: '{new_name}'"
+                f"❗ 任务存储盒 '{old_name}' 已存在，创建新的: '{new_name}'"
             )
             create_result = context_service.create(new_name)
 
             if not create_result.success or not create_result.context:
-                logger.error(f"❌ 创建上下文失败: {create_result.error_message}")
-                raise RuntimeError(f"创建上下文失败: {create_result.error_message}")
+                logger.error(f"❌ 创建存储盒失败: {create_result.error_message}", exc_info=True)
+                raise RuntimeError(f"创建存储盒失败: {create_result.error_message}")
 
             task_context = create_result.context
-            logger.info(f"✅ 任务上下文创建成功: {task_context.id}, 任务名: {self.task_name}")
+            logger.info(f"✅ 任务存储盒创建成功: {task_context.id}, 任务名: {self.task_name}")
 
         # 情况 3: 不存在，创建全新的 context
         elif not get_result.success:
-            logger.info(f"📦 为任务创建新上下文: {self.task_name}")
+            logger.info(f"📦 为任务创建新存储盒: {self.task_name}")
             create_result = context_service.create(self.task_name)
 
             if not create_result.success or not create_result.context:
-                logger.error(f"❌ 创建上下文失败: {create_result.error_message}")
-                raise RuntimeError(f"创建上下文失败: {create_result.error_message}")
+                logger.error(f"❌ 创建存储盒失败: {create_result.error_message}", exc_info=True)
+                raise RuntimeError(f"创建存储盒失败: {create_result.error_message}")
 
             task_context = create_result.context
-            logger.info(f"✅ 新任务上下文创建成功: {task_context.id}, 任务名: {self.task_name}")
+            logger.info(f"✅ 新任务存储盒创建成功: {task_context.id}, 任务名: {self.task_name}")
 
         # 确定该 context 的挂载路径
         context_mount_path = f"{CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK}/{self._task_name_snake_case}"
@@ -264,30 +264,30 @@ class MySandbox(BaseSandbox):
         return my_context_syncs
 
     def _initialize_session(self):
-        """创建AgentBay会话并挂载持久化上下文"""
+        """创建AgentBay会话并挂载持久化存储盒"""
         # 获得过激活的会话
         if self._session_id:
             logger.info(f"♻️ 复用现有会话: {self._session_id}")
             self._session = self._agent_bay.get(self._session_id).session
             if self._session is None:
-                logger.error(f"❌ 获取会话失败: {self._session_id}")
+                logger.error(f"❌ 获取会话失败: {self._session_id}", exc_info=True)
                 raise RuntimeError(f"获取会话失败: {self._session_id}")
             logger.info(f"✅ 会话复用成功, SessionId={self._session.session_id}")
 
         logger.info(f"🚀 初始化会话... 任务名={self.task_name}, 镜像ID={self._image_id}")
 
-        # 获取持久化上下文。
+        # 获取持久化存储盒。
         # 若想同步内部已经有内容的context box，
         # 会在同步它时遇到错误（Wait OSS credential timeout (>10s)），
         # 因此只选择为task创建一个task context box
         my_context_syncs = self._get_context_syncs()
 
         # 创建会话，该会话具备持久化数据
-        logger.info("🔗 创建带上下文的会话...")
+        logger.info("🔗 创建带存储盒的会话...")
         logger.debug(f"  - 镜像 ID: {self._image_id}")
-        logger.debug(f"  - 上下文同步数量: {len(my_context_syncs)}")
+        logger.debug(f"  - 存储盒同步数量: {len(my_context_syncs)}")
         for i, ctx_sync in enumerate(my_context_syncs):
-            logger.debug(f"    [{i}] 上下文 ID: {ctx_sync.context_id}")
+            logger.debug(f"    [{i}] 存储盒 ID: {ctx_sync.context_id}")
         logger.debug(f"  - 空闲超时: {self._idle_timeout}s")
 
         params = CreateSessionParams(
@@ -302,7 +302,7 @@ class MySandbox(BaseSandbox):
 
         if not result.success or result.session is None:
             error_msg = getattr(result, 'error_message', '未知错误')
-            logger.error(f"❌ 创建会话失败: {error_msg}")
+            logger.error(f"❌ 创建会话失败: {error_msg}", exc_info=True)
             logger.error(f"   结果对象: {result}")
             raise RuntimeError(f"创建 AgentBay 会话失败: {error_msg}")
 
@@ -358,9 +358,10 @@ class MySandbox(BaseSandbox):
 
                     # 会话已被云端自动释放，这是致命错误！
                     logger.error(
-                        f"❌ [致命错误] 会话 {self._session_id} 已被云端自动释放！\n"
+                        f"\n    ❌ [致命错误] 会话 {self._session_id} 已被云端自动释放！\n"
                         f"   原因: {info_result.error_message}\n"
                         f"   此错误不可恢复 - 开发流程必须终止。"
+                        , exc_info=True
                     )
                     raise RuntimeError(
                         f"[致命错误] 任务 '{self.task_name}' 的会话已被 AgentBay 云端自动释放。\n"
@@ -381,7 +382,7 @@ class MySandbox(BaseSandbox):
                         continue
                     else:
                         # 非 LOCK_FAILED 错误或已达到最大重试次数，重新抛出异常
-                        logger.error(f"❌ 会话检查失败: {error_msg}")
+                        logger.error(f"❌ 会话检查失败: {error_msg}", exc_info=True)
                         raise
 
         # ===== 慢速路径：需要初始化，使用锁保护 =====
@@ -409,7 +410,7 @@ class MySandbox(BaseSandbox):
                 self._last_session_check_time = time.time()
                 self._session_check_cache_valid = True
             except Exception as e:
-                logger.error(f"❌ 会话初始化失败: {e}")
+                logger.error(f"❌ 会话初始化失败: {e}", exc_info=True)
                 raise
 
     def execute(
@@ -451,7 +452,7 @@ class MySandbox(BaseSandbox):
             )
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"❌ AgentBay 沙盒命令执行失败: {error_msg}")
+            logger.error(f"❌ AgentBay 沙盒命令执行失败: {error_msg}", exc_info=True)
             return ExecuteResponse(
                 output=f"Error executing command: {error_msg}",
                 exit_code=1,
@@ -493,7 +494,7 @@ class MySandbox(BaseSandbox):
                     responses.append(FileUploadResponse(path=file_path))
                 else:
                     error_msg = getattr(upload_result, 'error', '未知错误')
-                    logger.error(f"❌ 上传失败: {file_path}, 错误: {error_msg}")
+                    logger.error(f"❌ 上传失败: {file_path}, 错误: {error_msg}", exc_info=True)
                     responses.append(FileUploadResponse(
                         path=file_path,
                         error=f"上传失败: {error_msg}"
@@ -501,7 +502,7 @@ class MySandbox(BaseSandbox):
 
             except Exception as e:
                 error_msg = str(e)
-                logger.error(f"❌ AgentBay 沙盒上传异常: {file_path}, 错误: {error_msg}")
+                logger.error(f"❌ AgentBay 沙盒上传异常: {file_path}, 错误: {error_msg}", exc_info=True)
                 responses.append(FileUploadResponse(
                     path=file_path,
                     error=error_msg
@@ -552,7 +553,7 @@ class MySandbox(BaseSandbox):
                     ))
                 else:
                     error_msg = getattr(download_result, 'error', '未知错误')
-                    logger.error(f"❌ 下载失败: {file_path}, 错误: {error_msg}")
+                    logger.error(f"❌ 下载失败: {file_path}, 错误: {error_msg}", exc_info=True)
                     responses.append(FileDownloadResponse(
                         path=file_path,
                         error=f"下载失败: {error_msg}"
@@ -560,7 +561,7 @@ class MySandbox(BaseSandbox):
 
             except Exception as e:
                 error_msg = str(e)
-                logger.error(f"❌ AgentBay 沙盒下载异常: {file_path}, 错误: {error_msg}")
+                logger.error(f"❌ AgentBay 沙盒下载异常: {file_path}, 错误: {error_msg}", exc_info=True)
                 responses.append(FileDownloadResponse(
                     path=file_path,
                     error=error_msg
@@ -577,10 +578,10 @@ class MySandbox(BaseSandbox):
 
     @property
     def task_context_box_id(self) -> str | None:
-        """获取任务上下文盒子的ID。
+        """获取任务存储盒盒子的ID。
         
         Returns:
-            str | None: 任务上下文盒子的ID，如果未设置则返回None
+            str | None: 任务存储盒盒子的ID，如果未设置则返回None
         """
         return self._task_context_box_id
 
@@ -597,21 +598,21 @@ class MySandbox(BaseSandbox):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """支持 with 语句：退出时自动清理资源"""
-        self.cleanup()
+        self.delete_session()
         if exc_type:
             logger.info(f"❌ 沙盒运行期间发生错误: {exc_val}")
         return False  # 不吞掉异常
 
-    def cleanup(self):
+    def delete_session(self):
         """清理资源，删除AgentBay会话"""
         if self._session:
-            logger.info(f"🧹 清理会话, SessionId={self._session.session_id}")
+            logger.info(f"🧹 当前会话不为None，开始手动释放会话, SessionId={self._session.session_id}")
             try:
                 # 将当前会话中对存储盒内文件的更改同步到OSS上该存储盒对应位置
                 self._agent_bay.delete(self._session, sync_context=True)
-                logger.info("✅ 会话清理成功")
+                logger.info("✅ 会话手动释放成功")
             except Exception as e:
-                logger.warning(f"❌ 清理过程中捕获异常: {e}")
+                logger.warning(f"❌ 手动释放会话过程中捕获异常: {e}")
             finally:
                 self._session = None
 
@@ -632,16 +633,13 @@ class MySandbox(BaseSandbox):
             return False
 
         if not self._session:
-            logger.error("❌ 会话不存在，跳过下载")
+            logger.error("❌ 会话不存在，跳过下载", exc_info=True)
             logger.info("会话不存在，无法下载成果物")
             return False
 
         try:
             # ⭐ 关键修复：构造云端挂载路径，处理空格和大小写问题
             # AgentBay 可能会将任务名中的空格转换为下划线，或进行其他格式化
-            # 因此需要尝试多种可能的路径格式
-
-            # 原始路径（直接使用 task_name）
 
             # ⭐ 关键修复：使用蛇形命名的任务名构造云端路径
             cloud_path = f"{CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK}/{self._task_name_snake_case}"
@@ -658,9 +656,7 @@ class MySandbox(BaseSandbox):
             return True
 
         except Exception as e:
-            logger.error(f"❌ 下载失败: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"❌ 下载失败: {e}", exc_info=True)
             return False
 
     def _download_recursive(self, cloud_dir: str, local_dir: Path) -> int:
@@ -686,11 +682,49 @@ class MySandbox(BaseSandbox):
             if not list_result.success or not list_result.entries:
                 return 0
 
+            # ⭐ 调试：打印第一个 entry 的所有属性，了解其结构
+            if list_result.entries:
+                first_entry = list_result.entries[0]
+                logger.debug(f"🔍 DirectoryEntry 对象属性: {dir(first_entry)}")
+                logger.debug(f"   - 类型: {type(first_entry)}")
+                # 尝试访问常见属性
+                for attr in ['path', 'name', 'full_path', 'file_path', 'entry_path']:
+                    if hasattr(first_entry, attr):
+                        logger.debug(f"   - {attr}: {getattr(first_entry, attr)}")
+
             for entry in list_result.entries:
-                cloud_path = entry.path
-                # ⭐ 关键修复：使用蛇形命名的任务名构造基础路径，用于计算相对路径
+                # ⭐ 修复：尝试多种可能的属性名
+                cloud_path = None
+                for attr_name in ['path', 'full_path', 'file_path', 'entry_path']:
+                    if hasattr(entry, attr_name):
+                        cloud_path = getattr(entry, attr_name)
+                        break
+
+                # 如果找不到完整路径属性，但有 name 属性，则手动拼接完整路径
+                if cloud_path is None and hasattr(entry, 'name'):
+                    # name 只是文件名，需要与父目录拼接
+                    cloud_path = f"{cloud_dir}/{entry.name}"
+                    logger.debug(f"   📝 使用 name 属性拼接路径: {cloud_path}")
+
+                if cloud_path is None:
+                    logger.error(f"❌ 无法找到 entry 的路径属性，可用属性: {dir(entry)}", exc_info=True)
+                    continue
+
+                # ⭐ 关键修复：统一使用 POSIX 路径格式（正斜杠）进行相对路径计算
+                # 云端路径始终是 Linux 格式（正斜杠），不能用 Windows 的 Path 对象处理
                 base_path = f"{CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK}/{self._task_name_snake_case}"
-                relative_path = Path(cloud_path).relative_to(base_path)
+
+                # 使用纯字符串操作计算相对路径，避免跨平台路径格式问题
+                if cloud_path.startswith(base_path + '/'):
+                    relative_path_str = cloud_path[len(base_path) + 1:]
+                elif cloud_path == base_path:
+                    continue  # 跳过基础路径本身
+                else:
+                    logger.warning(f"⚠️ 路径不匹配: {cloud_path} 不以 {base_path} 开头")
+                    continue
+
+                # 现在才转换为 Path 对象用于本地文件系统操作
+                relative_path = Path(relative_path_str)
 
                 # ⭐ 检查是否应该跳过
                 if _should_skip_path(relative_path):
@@ -732,7 +766,7 @@ class MySandbox(BaseSandbox):
                             logger.warning(f"⚠️ 下载失败: {cloud_path}, 错误: {error_msg}")
 
                     except Exception as e:
-                        logger.error(f"❌ 下载异常: {cloud_path}, 错误: {e}")
+                        logger.error(f"❌ 下载异常: {cloud_path}, 错误: {e}", exc_info=True)
                     finally:
                         # 清理临时文件
                         if temp_file_path and os.path.exists(temp_file_path):
@@ -751,7 +785,7 @@ class MySandbox(BaseSandbox):
 
     def __del__(self):
         """析构函数：作为最后一道防线确保资源被清理"""
-        self.cleanup()
+        self.delete_session()
 
 
 if __name__ == "__main__":

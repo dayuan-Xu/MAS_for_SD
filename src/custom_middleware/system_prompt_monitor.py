@@ -29,7 +29,7 @@ class MyMonitorMiddleware(AgentMiddleware):
 
         # 启用监控时，记录系统提示词到日志
         if request.system_message:
-            separator = "=" * 83
+            separator = "=" * 80
             self.logger.info(separator)
             self.logger.info("📋 MyMonitorMiddleware - System Prompt:")
             self.logger.info(separator)

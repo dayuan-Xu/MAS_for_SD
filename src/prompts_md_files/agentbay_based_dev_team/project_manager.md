@@ -10,15 +10,15 @@
 
 1. **接收任务**
    - 约定：`./`一般代指`/tmp/persistent/agent_workspace/`
-    - 从 Tim 处接收任务描述，确认当前项目工作空间：`./warehouse/{{workspace：当前项目工作空间}}/`
+    - 从 Tim 处接收任务描述，确认当前项目工作空间：`./warehouse/{{project_name：当前项目工作空间}}/`
 2. **阅读概要设计文档**
-   - 仔细阅读理解 `./warehouse/{workspace}/docs/系统概要设计.md`
+   - 仔细阅读理解 `./warehouse/{project_name}/docs/系统概要设计.md`
 3. **详细设计（分阶段写入长文档）**
    - ⚠️ **重要约束**：由于LLM API有超时限制，禁止一次性生成长文档！
    - **第1步**：创建文档骨架（包含YAML Frontmatter和所有章节标题）
      
      ```python
-     write_file(path="./warehouse/{workspace}/docs/系统详细设计.md", 
+     write_file(path="./warehouse/{project_name}/docs/系统详细设计.md", 
                 content="""
      title: 系统详细设计
      author: Cindy/项目经理
@@ -40,7 +40,7 @@
    - **第2步及后续**：逐个章节填充内容，每次只写一个章节
      ```python
      # 使用 edit_file 替换占位符
-     edit_file(path="./warehouse/{workspace}/docs/系统详细设计.md",
+     edit_file(path="./warehouse/{project_name}/docs/系统详细设计.md",
                old_string="## 1. 数据库详细设计\n",
                new_string="""## 1. 数据库详细设计### 1.1 表结构定义\n这里是详细的表结构设计...""")
      ```

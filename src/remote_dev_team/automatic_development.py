@@ -1,3 +1,4 @@
+import datetime
 import logging
 import uuid
 from typing import cast
@@ -10,7 +11,6 @@ from src.remote_dev_team.agentbay_based_dev_team import AgentBayBasedDevTeam
 from src.utils.datasets import Task
 
 logger = logging.getLogger(__name__)
-
 
 # 自动化软件开发
 TASK_DONE_IDENTIFIER = "TASK_DONE"
@@ -74,6 +74,7 @@ def multi_turn_conversation_with_fixed_human_input(task: Task, dev_team: AgentBa
             # 第一次用户输入
             if input_text is None:
                 input_text = f"针对一个软件需求完成自动化开发。\n软件需求描述如下：\ntask_name:{task_name}\ntask_description:{task_description}"
+                # input_text = f"本次仅做测试，你写入一个新的测试用文本文件到当前项目工作空间./warehouse/snake_game/下，之后输出‘TASK_DONE"
             else:
                 # 或者上个ReAct循环结束后，等待用户本轮输入
                 react_loop_count = react_loop_count + 1
@@ -96,9 +97,10 @@ def multi_turn_conversation_with_fixed_human_input(task: Task, dev_team: AgentBa
             logger.info(
                 "\n" + "=" * 41 + f" 💡 开启第 {react_loop_count} 轮 ReAct 循环: {task_name}_{react_loop_count} " + "=" * 41 + "\n")
 
+            current_timestamp = datetime.datetime.now().strftime("%H:%M:%S")
             run_config = {
                 **config_across_runs,
-                "run_name": f'{task_name}_{react_loop_count}'
+                "run_name": f'{task_name}_{react_loop_count}_{current_timestamp}'
             }
 
             for stream_part in dev_team.stream(input=dev_input, config=run_config, stream_mode=["values"],
@@ -124,15 +126,13 @@ def multi_turn_conversation_with_fixed_human_input(task: Task, dev_team: AgentBa
         task_success = False  # 标记失败
     finally:
         # ⭐ 关键：无论成功还是失败，都会执行这里
-        logger.info("🧹 进入清理阶段，开始清理资源和下载成果物...")
         dev_team.download_and_cleanup(success=task_success)
-        logger.info("✅ 清理阶段完成")
 
 
 # 一次自动化开发
 def automatic_dev(task: Task):
     from src.utils.my_sandbox import MySandbox
-    
+
     # 创建与当前任务关联的沙盒实例
     sandbox = MySandbox(task_name=task.name)
 

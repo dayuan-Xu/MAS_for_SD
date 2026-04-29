@@ -1,10 +1,13 @@
 import logging
+
 from langchain.agents.middleware import SummarizationMiddleware, TodoListMiddleware
 
 from src.config.llm import LLMs
 from src.config.settings import settings
+from src.custom_middleware.agent_activity_monitor import AgentActivityMonitor
 from src.custom_middleware.model_call_retry import MyRetryMiddleware
 from src.custom_middleware.my_middleware_prompts import MY_WRITE_TODOS_SYSTEM_PROMPT, MY_WRITE_TODOS_TOOL_DESCRIPTION
+
 # ⚠️ 注意：不再从 agent_config 导入 my_composite_backend
 # CompositeBackend 应该在 AgentBayBasedDevTeam 中根据具体任务动态创建
 
@@ -42,3 +45,5 @@ retry_middleware = MyRetryMiddleware(
 )
 
 logger.debug("共享中间件初始化完成")
+
+agent_activity_monitor = AgentActivityMonitor()

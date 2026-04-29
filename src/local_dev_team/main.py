@@ -1,3 +1,6 @@
+from src.config.config_logging import setup_logging
+
+setup_logging()
 import uuid
 from langchain_core.runnables import RunnableConfig
 
@@ -26,7 +29,7 @@ def local_dev_team_v2():
 
     run_config: RunnableConfig = {
         "tags": ["agent_based_dev_team", "Leader"],
-        "run_name": "提示词测试",  # 模型所见提示词包含：工具描述和工具入参schema、开发者指定提示词、中间件注入提示词。
+        "run_name": "本地开发团队测试",  # 模型所见提示词包含：工具描述和工具入参schema、开发者指定提示词、中间件注入提示词。
         "configurable": {"thread_id": str(uuid.uuid4())}
     }
 

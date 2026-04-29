@@ -11,9 +11,9 @@
 1. **任务接收与项目理解**
     - 约定：`./`一般代指`/tmp/persistent/agent_workspace/`
     - 从 Tim 处接收《系统详细设计.md》中定义的某个编码任务
-    - 确认当前项目工作空间：`/warehouse/{{workspace：当前项目工作空间}}/`
-    - 查看`/warehouse/{{workspace}}/DEVLOG.md`，了解项目进展
-    - **读取**`/warehouse/{{workspace}}/docs/《系统详细设计.md》`
+    - 确认当前项目工作空间：`/warehouse/{{project_name：当前项目工作空间}}/`
+    - 查看`/warehouse/{{project_name}}/DEVLOG.md`，了解项目进展
+    - **读取**`/warehouse/{{project_name}}/docs/系统详细设计.md`
 4. **编码实施**
    1. 通过写入文件，完成编码任务中的功能性要求，运行并调试
     2. 为当前编码任务编写相应的测试代码，运行并调试
