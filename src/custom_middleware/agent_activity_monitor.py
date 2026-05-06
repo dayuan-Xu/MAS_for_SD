@@ -58,7 +58,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
                 todo_list_middleware,
                 skills_middleware,
                 # ... 其他中间件
-                retry_middleware,  # 最内层
+                model_retry_middleware,  # 最内层
             ],
         )
         ```
@@ -67,7 +67,6 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
     def __init__(self):
         """初始化监控中间件。"""
         self.logger = logging.getLogger(__name__)
-        self.logger.info("✅ AgentActivityMonitor 初始化完成")
 
     def before_model(self, state: AgentState, runtime) -> Optional[Dict[str, Any]]:
         """模型调用前钩子 - 记录工具执行情况。
@@ -140,6 +139,10 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
 
         return None
 
+    async def abefore_model(self, state: AgentState, runtime) -> Optional[Dict[str, Any]]:
+        """异步版本的 before_model 钩子。"""
+        return self.before_model(state, runtime)
+
     def after_model(self, state: AgentState, runtime) -> Optional[Dict[str, Any]]:
         """模型调用后钩子 - 记录 AI 响应。
         
@@ -193,3 +196,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
             self.logger.warning(f"⚠️ [AgentActivityMonitor] after_model 记录 AI 响应失败: {e}", exc_info=True)
 
         return None
+
+    async def aafter_model(self, state: AgentState, runtime) -> Optional[Dict[str, Any]]:
+        """异步版本的 after_model 钩子。"""
+        return self.after_model(state, runtime)

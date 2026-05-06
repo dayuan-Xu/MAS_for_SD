@@ -5,11 +5,10 @@
 """
 from deepagents import FilesystemMiddleware
 from deepagents.middleware import SummarizationMiddleware
-from langchain.agents.middleware import HumanInTheLoopMiddleware, TodoListMiddleware
+from langchain.agents.middleware import HumanInTheLoopMiddleware, TodoListMiddleware, ModelRetryMiddleware
 
 from src.config.llm import LLMs
 from src.config.settings import settings
-from src.custom_middleware.model_call_retry import MyRetryMiddleware
 from src.custom_middleware.my_middleware_prompts import LOCAL_FILE_SYSTEM_MIDDLEWARE_SYSTEM_PROMPT, \
     LOCAL_EXECUTE_TOOL_DESCRIPTION, MY_WRITE_TODOS_SYSTEM_PROMPT, MY_WRITE_TODOS_TOOL_DESCRIPTION
 from src.paths import LOCAL_AGENT_WORKSPACE
@@ -20,7 +19,14 @@ my_local_backend = FixedLocalShellBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtua
 
 # 共享的消息总结中间件实例
 llm = LLMs["minimax-m2.7"] if settings.USE_PAID_LLM_API else LLMs["gpt-5-mini"]
-summarization_middleware = SummarizationMiddleware(llm, backend=my_local_backend)
+
+# ⭐ 关键配置：SummarizationMiddleware 必须设置 token_threshold 才能触发摘要
+summarization_middleware = SummarizationMiddleware(
+    llm=llm,
+    backend=my_local_backend,
+    token_threshold=1500,  # 当消息总 token 数超过 1500 时触发摘要
+    keep_messages=5,  # 摘要后保留最近 5 条消息不被摘要
+)
 
 # 共享的待办事项中间件实例
 todo_list_middleware = TodoListMiddleware(system_prompt=MY_WRITE_TODOS_SYSTEM_PROMPT,
@@ -42,19 +48,11 @@ HITL_middleware = HumanInTheLoopMiddleware(
     }
 )
 
-# 共享的重试中间件实例
-# 配置说明：
-# - max_retries=5: 最多重试5次（应对临时服务过载）
-# - initial_wait=2.0: 首次等待2秒（给服务器恢复时间）
-# - max_wait=60.0: 最长等待60秒（避免无限等待）
-# - exponential_base=2.0: 指数退避基数（2s → 4s → 8s → 16s → 32s）
-# - jitter=True: 启用随机抖动（±25%，避免惊群效应）
-# - enabled=True: 默认启用重试功能
-retry_middleware = MyRetryMiddleware(
-    max_retries=5,
-    initial_wait=2.0,
-    max_wait=60.0,
-    exponential_base=2.0,
-    jitter=True,
-    enabled=True
+# 共享的重试中间件实例（使用 LangChain 官方实现）
+retry_middleware = ModelRetryMiddleware(
+    max_retries=5,           # 最多重试 5 次
+    backoff_factor=2.0,      # 指数退避基数
+    initial_delay=2.0,       # 首次等待 2 秒
+    max_delay=60.0,          # 最长等待 60 秒
+    jitter=True,             # 启用随机抖动
 )

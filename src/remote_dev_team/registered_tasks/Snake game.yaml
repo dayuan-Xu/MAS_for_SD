@@ -1,7 +1,0 @@
-task:
-  description: Create a snake game.
-  description_CN: 创建一个贪吃蛇游戏。
-  name: Snake game
-  name_CN: 贪吃蛇游戏
-  number: 0
-thread_id: 4633f41a-a9c7-406e-bad9-dbc723a10678

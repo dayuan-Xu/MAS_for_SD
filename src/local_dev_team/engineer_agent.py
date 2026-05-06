@@ -1,4 +1,5 @@
 import uuid
+
 from deepagents import SubAgentMiddleware, CompiledSubAgent
 from deepagents.middleware import SkillsMiddleware
 from langchain.agents import create_agent
@@ -67,7 +68,7 @@ engineer_subagent = CompiledSubAgent(
 )
 
 if __name__ == "__main__":
-    from src.utils.graph_running_utils import multi_turn_conversation
+    from src.utils.graph_running import multi_turn_conversation
 
     engineer = create_agent(
         model=llm,

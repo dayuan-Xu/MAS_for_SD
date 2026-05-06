@@ -1,10 +1,12 @@
 from src.config.config_logging import setup_logging
 
+# 配置日志系统
 setup_logging()
+
 import uuid
 from langchain_core.runnables import RunnableConfig
 
-from src.utils.graph_running_utils import multi_turn_conversation
+from src.utils.graph_running import multi_turn_conversation
 
 
 # 基于langchain deepagents实现的智能体开发团队。
@@ -36,6 +38,20 @@ def local_dev_team_v2():
     multi_turn_conversation(leader, run_config)
 
 
+def local_dev_team_with_persistent_checkpointer():
+    from src.local_dev_team.leader_agent import leader_v2
+    thread_id = "4620f7d0-44d7-43d4-96bf-fbc9f4a67db7"
+
+    run_config: RunnableConfig = {
+        "tags": ["agent_based_dev_team", "Leader"],
+        "run_name": "本地开发团队测试",  # 模型所见提示词包含：工具描述和工具入参schema、开发者指定提示词、中间件注入提示词。
+        "configurable": {"thread_id": thread_id}
+    }
+
+    multi_turn_conversation(leader_v2, run_config)
+    print(f"本次对话使用的thread_id为{thread_id}，后续可持续使用")
+
+
 if __name__ == "__main__":
     # toy_game = """使用Python GUI开发一个简单的五子棋游戏。"""
-    local_dev_team_v2()
+    local_dev_team_with_persistent_checkpointer()

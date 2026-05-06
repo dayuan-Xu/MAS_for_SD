@@ -1,4 +1,5 @@
 import logging
+
 from pydantic_settings import BaseSettings, SettingsConfigDict  # 专门管纯固定的配置（纯静态数据），只会随软件开发环节（开发、测试、上线）而发生一定变化
 
 from src.paths import DOT_ENV_FILE
@@ -41,13 +42,13 @@ class Settings(BaseSettings):
     LANGSMITH_ENDPOINT: str = ""
     LANGSMITH_API_KEY: str = ""
     LANGSMITH_PROJECT: str = ""
-    USE_POSTGRES_CHECKPOINTER_FIRST_TIME: bool = True
-    POSTGRES_DB_USER: str = "postgres"
-    POSTGRES_DB_PASSWORD: str = "postgres"
-    POSTGRES_DB_HOST: str = "localhost"
+    USE_POSTGRES_CHECKPOINTER: bool = True  # 是否使用Postgres作为checkpointer，若为True
+    POSTGRES_DB_USER: str = "postgres"  # 用户名
+    POSTGRES_DB_PASSWORD: str = "postgres"  # 密码
+    POSTGRES_DB_HOST: str = "localhost"  # 主机
     POSTGRES_DB_PORT: int = 5442
-    POSTGRES_DB_NAME: str = "postgres"
-    POSTGRES_DB_SSL_MODE: str = "disable"
+    POSTGRES_DB_NAME: str = "postgres"  # 数据库名
+    POSTGRES_DB_SSL_MODE: str = "disable"  # ssl模式
     WUYING_AGENTBAY_API_KEY: str = ""
     TAVILY_API_KEY: str = ""
     POSTGRESQL_URL: str = ""
@@ -63,7 +64,9 @@ class Settings(BaseSettings):
 
 # 🔥 全局唯一单例（整个项目只创建这一个对象）
 settings = Settings()
-logger.info("全局静态配置settings已加载！当前LLM API配置：" + "minimax" if settings.USE_PAID_LLM_API else "chatanywhere")
+logger.info("全局静态配置settings已加载！")
+logger.info("当前LLM API配置：" + "minimax" if settings.USE_PAID_LLM_API else "chatanywhere")
+logger.info("当前checkpointer配置：" + "Postgres checkpointer" if settings.USE_POSTGRES_CHECKPOINTER else "Memory")
 
 # pprint.info(settings.model_dump())
 

@@ -9,30 +9,77 @@
 import asyncio
 import logging
 import threading
-from typing import Any, Sequence, Callable, NotRequired
+from typing import Any, Sequence, Callable, NotRequired, TypedDict
 
-from deepagents import CompiledSubAgent
 from deepagents.middleware._utils import append_to_system_message
-from deepagents.middleware.subagents import _SubagentSpec
 from langchain.agents.middleware.types import AgentMiddleware, AgentState, ContextT, ModelRequest, ModelResponse, \
     ResponseT
 from langchain.tools import ToolRuntime
 from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.runnables import Runnable
 from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated
 
 
+class CompiledExpertAgent(TypedDict):
+    """A pre-compiled agent spec.
+
+    !!! note
+
+        The runnable's state schema must include a 'messages' key.
+
+        This is required for the expert agent to communicate results back to the main agent.
+
+    When the sexpert agent completes, the final message in the 'messages' list will be
+    extracted and returned as a `ToolMessage` to the leader agent.
+    """
+
+    name: str
+    """Unique identifier for the expert agent."""
+
+    description: str
+    """What this expert agent does."""
+
+    runnable: Runnable
+    """A custom agent implementation.
+
+    Create a custom agent using either:
+
+    1. LangChain's [`create_agent()`](https://docs.langchain.com/oss/python/langchain/quickstart)
+    2. A custom graph using [`langgraph`](https://docs.langchain.com/oss/python/langgraph/quickstart)
+
+    If you're creating a custom graph, make sure the state schema includes a 'messages' key.
+    This is required for the expert agent to communicate results back to the leader agent.
+    """
+
+
+def create_compiled_expert_agent(agent, description: str):
+    return CompiledExpertAgent(
+        name=agent.name,
+        runnable=agent,
+        description=description
+    )
+
+
+class _ExpertAgentSpec(TypedDict):
+    """Internal spec for building the assign tool."""
+
+    name: str
+    description: str
+    runnable: Runnable
+
+
 def _merge_expert_states(left: dict, right: dict) -> dict:
     """合并两个专家状态字典。
     
     用于处理并行 assign 调用时的状态更新冲突。
-    如果同一个专家在左右两个字典中都存在，右边的会覆盖左边的（后执行的获胜）。
+    如果同一个专家的图状态在左右两个字典中都存在，右边字典中的会覆盖左边字典中的（后执行的获胜）。
     
     Args:
         left: 第一个状态字典
-        right: 第二个状态字典
+        right: 第二个状态字典，可能包含某个专家的最新图状态
         
     Returns:
         合并后的状态字典
@@ -119,7 +166,7 @@ Remember: All expert agents maintain memory across multiple assignments, so they
 
 
 def _build_assign_tool(
-        experts: list[_SubagentSpec],
+        experts: list[_ExpertAgentSpec],
 ) -> StructuredTool:
     """构建assign工具，支持向专家团队委派任务。
     
@@ -152,7 +199,7 @@ def _build_assign_tool(
         if "messages" not in expert_state:
             error_msg = (
                 "Expert agent must return a state containing a 'messages' key. "
-                "Custom StateGraphs used with CompiledSubAgent should include 'messages' "
+                "Custom StateGraphs used with CompiledExpertAgent should include 'messages' "
                 "in their state schema to communicate results back to the main agent."
             )
             raise ValueError(error_msg)
@@ -239,7 +286,12 @@ def _build_assign_tool(
         try:
             expert, expert_state = _validate_and_prepare_state(expert_name, private_message, runtime)
             logger.debug(f"开始执行专家 {expert_name} 的任务...")
+
+            # 值得注意的是，expert是一个编译时没有传入checkpointer的已编译状态图，所以每次运行完全可以视为是**单论对话**！
+            # 因此此处传入的 runtime.config中是否包含thread_id对于本次expert的invoke来说没有意义！
+            # 其中别的配置可能有意义
             expert_state = expert.invoke(expert_state, config=runtime.config)
+
             logger.debug(f"专家 {expert_name} 任务执行完成")
             return _return_command_with_state_update(expert_name, expert_state, runtime)
         except Exception as e:
@@ -368,7 +420,7 @@ class AssignMiddleware(AgentMiddleware[AssignState, ContextT, ResponseT]):
     def __init__(
             self,
             *,
-            experts: Sequence[CompiledSubAgent] | None = None,
+            experts: Sequence[CompiledExpertAgent] | None = None,
             system_prompt: str | None = ASSIGN_SYSTEM_PROMPT,
             **kwargs: Any,
     ) -> None:
@@ -385,8 +437,8 @@ class AssignMiddleware(AgentMiddleware[AssignState, ContextT, ResponseT]):
         if experts is None:
             raise ValueError("Please provide a list of experts  for AssignMiddleware Instance")
 
-        # 将CompiledSubAgent转换为内部规格格式
-        expert_specs: list[_SubagentSpec] = []
+        # 将CompiledExpertAgent转换为内部规格格式
+        expert_specs: list[_ExpertAgentSpec] = []
         for expert in experts:
             compiled = expert
             expert_specs.append({
@@ -431,3 +483,30 @@ class AssignMiddleware(AgentMiddleware[AssignState, ContextT, ResponseT]):
             new_system_message = append_to_system_message(request.system_message, self.system_prompt)
             return await handler(request.override(system_message=new_system_message))
         return await handler(request)
+
+
+def test_assign_middleware():
+    import uuid
+
+    from langchain_core.runnables import RunnableConfig
+
+    from src.remote_dev_team.team_with_sandbox import DevTeamWithLinuxSandboxAndMCP
+    from src.utils.graph_running import multi_turn_conversation
+    from src.remote_dev_team.my_sandbox_backend import AgentBayBasedLinuxSandboxBackend
+    # 创建与当前任务关联的沙盒实例
+    sandbox = AgentBayBasedLinuxSandboxBackend(task_name="Dev team test")
+
+    # 创建dev_team实例
+    dev_team = DevTeamWithLinuxSandboxAndMCP(sandbox)
+
+    run_config: RunnableConfig = {
+        "tags": ["agentbay_based_dev_team", "Leader"],
+        "run_name": "assign中间件测试",
+        "configurable": {"thread_id": str(uuid.uuid4())}
+    }
+
+    multi_turn_conversation(dev_team, run_config)
+
+
+if __name__ == "__main__":
+    test_assign_middleware()

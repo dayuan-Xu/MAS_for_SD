@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import random
 import sys
@@ -160,16 +161,6 @@ class MyRetryMiddleware(AgentMiddleware):
             try:
                 # 首次尝试或重试后调用 handler
                 if attempt == 0:
-                    separator = "=" * 83
-                    self.logger.info(separator)
-                    self.logger.info("📡 [MyRetryMiddleware] 开始第1次LLM调用尝试...")
-                    self.logger.info(separator)
-                    # ⭐ 强制刷新日志，确保立即输出
-
-                    for h in self.logger.handlers:
-                        h.flush()
-                    sys.stdout.flush()
-                    sys.stderr.flush()
                     return handler(request)
                 else:
                     # 重试时打印日志
@@ -231,6 +222,88 @@ class MyRetryMiddleware(AgentMiddleware):
 
                 # 等待后重试
                 time.sleep(wait_time)
+
+        # 理论上不会到达这里，但为了类型安全
+        raise last_exception
+
+    async def awrap_model_call(
+            self,
+            request: ModelRequest,
+            handler: Callable[[ModelRequest], ModelResponse],
+    ) -> ModelResponse:
+        """异步版本的 wrap_model_call，添加智能重试逻辑"""
+
+        # 如果未启用重试，直接调用 handler
+        if not self.enabled:
+            return await handler(request)
+
+        last_exception = None
+
+        for attempt in range(self.max_retries + 1):  # +1 是因为首次尝试不算重试
+            try:
+                # 首次尝试或重试后调用 handler
+                if attempt == 0:
+                    return await handler(request)
+                else:
+                    # 重试时打印日志
+                    separator = "=" * 83
+                    self.logger.warning(separator)
+                    self.logger.warning(f"🔄 [MyRetryMiddleware] - 第 {attempt}/{self.max_retries} 次重试...")
+                    self.logger.warning(separator)
+                    # 强制刷新所有handler
+                    for h in self.logger.handlers:
+                        h.flush()
+                    sys.stdout.flush()
+                    sys.stderr.flush()
+                    return await handler(request)
+
+            except Exception as e:
+                last_exception = e
+
+                # ⭐ 关键：记录所有捕获的异常，便于调试
+                self.logger.error(f"⚠️ 捕获到异常类型: {type(e).__name__}")
+                self.logger.error(f"⚠️ 异常信息: {e}")
+                self.logger.error(f"⚠️ 异常模块: {type(e).__module__}")
+
+                # 检查是否是可重试的错误
+                is_retryable, error_desc = self._is_retryable_error(e)
+
+                if not is_retryable:
+                    # 不可重试的错误，直接抛出
+                    separator = "=" * 83
+                    self.logger.error(separator)
+                    self.logger.error(f"❌ RetryMiddleware - 遇到不可重试的错误: {e}")
+                    self.logger.error(f"   异常类型: {type(e).__name__}")
+                    self.logger.error(separator)
+                    raise
+
+                # 如果是最后一次尝试，抛出异常
+                if attempt >= self.max_retries:
+                    separator = "=" * 83
+                    self.logger.error(separator)
+                    self.logger.error(f"❌ RetryMiddleware - 已达到最大重试次数({self.max_retries})，放弃重试")
+                    self.logger.error(separator)
+                    self.logger.error(f"最后错误: {error_desc}")
+                    raise
+
+                # 计算等待时间
+                wait_time = self._calculate_wait_time(attempt)
+
+                # 打印重试信息
+                separator = "=" * 83
+                self.logger.warning(separator)
+                self.logger.warning(f"⚠️  RetryMiddleware - {error_desc}")
+                self.logger.warning(f"⏱️  等待 {wait_time:.2f} 秒后重试... (第{attempt + 1}/{self.max_retries}次)")
+                self.logger.warning(separator)
+
+                # ⭐ 强制刷新日志
+                for h in self.logger.handlers:
+                    h.flush()
+                sys.stdout.flush()
+                sys.stderr.flush()
+
+                # 异步等待后重试
+                await asyncio.sleep(wait_time)
 
         # 理论上不会到达这里，但为了类型安全
         raise last_exception

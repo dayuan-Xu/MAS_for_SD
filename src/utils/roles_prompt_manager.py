@@ -4,10 +4,9 @@
 提供懒加载、缓存机制来管理角色提示词文件。
 """
 
-from pathlib import Path
-
 import logging
 from functools import lru_cache
+from pathlib import Path
 from typing import Dict
 
 from src.paths import DEEP_AGENT_SYSTEM_PROMPTS_FILES
@@ -42,12 +41,12 @@ def list_available_roles(prompts_dir: Path = _PROMPTS_DIR) -> list:
 
 
 @lru_cache(maxsize=None)
-def get_system_prompt(role_name: str, prompts_dir: Path = _PROMPTS_DIR) -> str:
+def get_system_prompt(role: str, prompts_dir: Path = _PROMPTS_DIR) -> str:
     """
     懒加载获取指定角色的系统提示词
 
     Args:
-        role_name: 角色名称 (team_leader, product_manager, architect, 
+        role: 角色、身份 (team_leader, product_manager, architect,
                    project_manager, engineer, qa_engineer)
         prompts_dir: 提示词文件目录
 
@@ -58,7 +57,7 @@ def get_system_prompt(role_name: str, prompts_dir: Path = _PROMPTS_DIR) -> str:
         FileNotFoundError: 当提示词文件不存在时
         UnicodeDecodeError: 当文件编码错误时
     """
-    prompt_file = prompts_dir / f"{role_name}.md"
+    prompt_file = prompts_dir / f"{role}.md"
 
     if not prompt_file.exists():
         available_roles = list_available_roles(prompts_dir)

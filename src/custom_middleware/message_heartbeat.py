@@ -7,6 +7,7 @@
 import json
 import threading
 import time
+
 from langchain_core.runnables import RunnableConfig
 
 from src.custom_middleware.communication import MESSAGE_BUS_ROOT
@@ -150,7 +151,7 @@ class SmartMessageListener:
             (has_unread, unread_count): 是否有未读消息，未读消息数量
         """
         try:
-            from src.utils.my_sandbox import my_sandbox_backend
+            from src.remote_dev_team.my_sandbox_backend import my_sandbox_backend
 
             ls_cmd = f"ls -1 {self.agent_inbox}/*.json 2>/dev/null || echo ''"
             result = my_sandbox_backend.execute(ls_cmd)

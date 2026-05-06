@@ -8,6 +8,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from src.Tools import get_current_time
 from src.config.llm import LLMs
+from src.config.memory import my_checkpointer
 from src.config.settings import settings
 from src.custom_middleware.agent_activity_monitor import AgentActivityMonitor
 from src.custom_middleware.dev_progress import TeamLeaderMiddleware
@@ -55,8 +56,28 @@ leader = create_agent(
     name="Tim",
 )
 
+# 使用了postgres_checkpointer的leader，生产环境下的leader
+leader_v2 = create_agent(
+    model=llm,
+    tools=[get_current_time],
+    system_prompt=leader_sys_prompt,
+    middleware=[
+        activity_monitor,  # ⭐ 新增：最外层，监控所有活动
+        todo_list_middleware,
+        mySkillsMiddleware,
+        filesystem_middleware,
+        subagent_middleware,
+        summarization_middleware,
+        team_leader_middleware,
+        HITL_middleware,
+        retry_middleware,  # ⭐ 重试中间件放在最内层，紧贴 LLM API 调用
+    ],  # type: ignore[arg-type]  # LangChain中间件泛型协变误报
+    checkpointer=my_checkpointer,
+    name="Tim",
+)
+
 if __name__ == "__main__":
-    from src.utils.graph_running_utils import multi_turn_conversation
+    from src.utils.graph_running import multi_turn_conversation
 
     run_config: RunnableConfig = {
         "tags": ["local_agent_dev_team", "Leader"],

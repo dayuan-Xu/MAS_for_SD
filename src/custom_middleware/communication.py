@@ -23,6 +23,8 @@ import json
 import logging
 import time
 import uuid
+from typing import NotRequired
+
 from langchain.agents.middleware.types import (
     AgentMiddleware,
     AgentState,
@@ -37,9 +39,8 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 from pydantic import BaseModel, Field
-from typing import NotRequired
 
-from src.utils.my_sandbox import MySandbox
+from src.remote_dev_team.my_sandbox_backend import AgentBayBasedLinuxSandboxBackend
 
 
 class MessageBusState(AgentState):
@@ -122,7 +123,7 @@ class MessageBusMiddleware(AgentMiddleware[MessageBusState, ContextT, ResponseT]
     def __init__(
             self,
             message_bus_root: str = MESSAGE_BUS_ROOT,
-            backend: MySandbox | None = None,
+            backend: AgentBayBasedLinuxSandboxBackend | None = None,
     ):
         """初始化消息总线中间件。
         
@@ -202,7 +203,7 @@ class MessageBusMiddleware(AgentMiddleware[MessageBusState, ContextT, ResponseT]
         """获取收件箱路径（动态计算）。"""
         return f"{self.message_bus_root}/{self.agent_name}_inbox"
 
-    def _get_backend(self, runtime: ToolRuntime | None = None) -> MySandbox:
+    def _get_backend(self, runtime: ToolRuntime | None = None) -> AgentBayBasedLinuxSandboxBackend:
         """获取 backend 实例。
         
         Args:

@@ -108,6 +108,13 @@ minimax_m27 = ChatOpenAI(
     # extra_body={"reasoning_split": True}  # 设置 reasoning_split=True 将思考内容分离到 reasoning_details 字段
 )
 
+custom_profile = {
+    "max_input_tokens": 200_000,
+    # ...
+}
+
+minimax_m27.profile = custom_profile
+
 
 def test_minimax_m27():
     res = minimax_m27.invoke("你好啊，你是什么模型")

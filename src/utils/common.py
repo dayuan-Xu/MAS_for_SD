@@ -1,39 +1,103 @@
-# from rich.pretty import pprint
-# from rich.json import JSON
-#
-# # 方案 2a: 直接用 pprint（会自动美化）
-# data = {"message": "你好", "count": 42}
-# pprint(data)
-#
-# # 方案 2b: 使用专门的 JSON 高亮
-# json_str = "{\"query\": \"DeepAgent framework deepagents Deep Agent library 'DeepAgents' GitHub 'deepagents' framework\", \"follow_up_questions\": null, \"answer\": null, \"images\": [], \"results\": [{\"url\": \"https://github.com/langchain-ai/deepagents\", \"title\": \"langchain-ai/deepagents: Agent harness built with ... - GitHub\", \"content\": \"Deep Agents is an agent harness built on langchain and langgraph. Instead of wiring up prompts, tools, and context management yourself, you get a working agent immediately and customize what you need. * **Sub-agents** — `task` for delegating work with isolated context windows. from deepagents import create_deep_agent agent = create_deep_agent result = agent invoke \\\"messages\\\" \\\"role\\\" \\\"user\\\" \\\"content\\\" \\\"Research LangGraph and write a summary\\\". Add your own tools, swap models, customize prompts, configure sub-agents, and more. from langchain chat_models import init_chat_model agent = create_deep_agent model = init_chat_model\\\"openai:gpt-4o\\\" tools = my_custom_tool system_prompt =\\\"You are a research assistant.\\\". * **Batteries included** — Planning, file access, sub-agents, and context management work out of the box. * **Get started in seconds** — `pip install deepagents` or `uv add deepagents` and you have a working agent. * reference.langchain.com/python – API reference docs for Deep Agents packages. | `deepagents` | Core SDK — `create_deep_agent`, middleware, backends |. Deep Agents is an agent harness built on langchain and langgraph.\", \"score\": 0.9999443, \"raw_content\": null}, {\"url\": \"https://github.com/RUC-NLPIR/DeepAgent\", \"title\": \"A General Reasoning Agent with Scalable Toolsets · GitHub\", \"content\": \"DeepAgent is an end-to-end deep reasoning agent that performs autonomous thinking, tool discovery, and action execution within a single, coherent reasoning\", \"score\": 0.99982184, \"raw_content\": null}, {\"url\": \"https://www.youtube.com/watch?v=TTMYJAw5tiA\", \"title\": \"Implementing deepagents: a technical walkthrough - YouTube\", \"content\": \"We recently released `deepagents`, a Python package making it easier to build \\\"Deep Agents\\\". This comes with built in sub agent support,\", \"score\": 0.99965405, \"raw_content\": null}, {\"url\": \"https://medium.com/github-all-stars/github-all-stars-5-deepagents-architecture-of-deep-reasoning-for-agentic-ai-b77261a49bde\", \"title\": \"GitHub All-Stars #5: deepagents -Architecture of Deep Reasoning ...\", \"content\": \"The Four Pillars of the deepagents Architecture. deepagents is the result of analyzing existing advanced agent systems such as Claude Code and\", \"score\": 0.99942076, \"raw_content\": null}, {\"url\": \"https://docs.langchain.com/oss/python/deepagents/overview\", \"title\": \"Deep Agents overview - Docs by LangChain\", \"content\": \"* When to use the Deep Agents. Build agents that can plan, use subagents, and leverage file systems for complex tasks. Deep agents are the easiest way to start building agents and applications powered by LLMs—with built-in capabilities for task planning, file systems for context management, subagent-spawning, and long-term memory. You can use deep agents for any task, including complex, multi-step tasks. * **Deep Agents SDK**: A package for building agents that can handle any task. See the Quickstart and Customization guide to get started building your own agents and applications with deep agents. ## ​ When to use the Deep Agents. Use the **Deep Agents SDK** when you want to build agents that can:. Use the **Deep Agents CLI** when you want a coding agent on the command line, built on the Deep Agents SDK:. A built-in `task` tool enables agents to spawn specialized subagents for context isolation. Build your first deep agent## Customization. Use the Deep Agents CLI## Reference.\", \"score\": 0.9985221, \"raw_content\": null}, {\"url\": \"https://blog.gopenai.com/mastering-langchain-deep-agent-how-to-build-autonomous-multi-step-ai-systems-part-0e6db1d16a0c\", \"title\": \"Mastering LangChain Deep Agent: How to Build Autonomous Multi ...\", \"content\": \"Meet DeepAgents — a standalone framework for creating AI agents that think, plan, and act across multi-step workflows. Powered by LangGraph and\", \"score\": 0.9984633, \"raw_content\": null}, {\"url\": \"https://github.com/langchain-ai/deepagentsjs\", \"title\": \"langchain-ai/deepagentsjs: Deep Agents in JS - GitHub\", \"content\": \"map((path) =>({, content null, error \\\"file_not_found\\\",}));}}// Use the sandbox with your agent const sandbox = new LocalShellSandbox(\\\"./workspace\\\"); const agent = createDeepAgent({backend sandbox, systemPrompt\\\"You can run shell commands using the execute tool.\\\",});. import{createAgent, todoListMiddleware} from \\\"langchain\\\";// todoListMiddleware is included by default in createDeepAgent// You can customize it if building a custom agent const agent = createAgent({model\\\"claude-sonnet-4-20250514\\\", middleware[todoListMiddleware({// Optional: Custom addition to the system prompt systemPrompt\\\"Use the write_todos tool to...\\\",}),],});. import{createAgent} from \\\"langchain\\\"; import{createFilesystemMiddleware} from \\\"deepagents\\\";// FilesystemMiddleware is included by default in createDeepAgent// You can customize it if building a custom agent const agent = createAgent({model\\\"claude-sonnet-4-20250514\\\", middleware[createFilesystemMiddleware({backend ,// Optional: customize storage backend systemPrompt\\\"Write to the filesystem when...\\\" ,// Optional custom system prompt override customToolDescriptions{ls\\\"Use the ls tool when...\\\", read_file\\\"Use the read_file tool to...\\\",} ,// Optional: Custom descriptions for filesystem tools}),],});.\", \"score\": 0.9982317, \"raw_content\": null}, {\"url\": \"https://bsorrentino.github.io/bsorrentino/ai/2025/10/17/langgraph4j-deepagents.html\", \"title\": \"LangGraph4j Deep Agents (Agent 2.0) | Welcome to Bartolomeo Blog\", \"content\": \"2. **Hierarchical Delegation (Sub-Agents)** – An **Orchestrator** delegates to specialized agents (Researcher, Coder, Writer, …), each working in a clean context and returning synthesized results. Since the LangGraph4j is inpired by (more popular) LangGraph python version, I’ve decided to adapt its python based Deep Agents reference implementation to Java using LangGraph4j and Spring AI. This repository demonstrates the four pillars of Deep Agents, it includes sample code that create a **Deep Researcher Agent** that use Tavily as web search engine and **OpenAI gpt-4o-mini model**. // Create a Research Sub Agent var researchSubagent = DeepAgent. Instead, you should break down a large topic into the necessary components, and then call multiple research agents in parallel, one for each sub question. build();// Create a Critique Sub Agent var critiqueSubAgent = DeepAgent. Use the research-agent to conduct deep research. Deep Agents architecture is a try **to move beyond one-loop “shallow” agents** to explicit planning hierarchical delegation, persistent memory, and rigorous context engineering.\", \"score\": 0.997065, \"raw_content\": null}, {\"url\": \"https://blog.langchain.com/deep-agents/\", \"title\": \"Deep Agents - LangChain Blog\", \"content\": \"# Deep Agents. ## Deep agents in the wild. All of the major model providers have an agent for Deep Research and for “async” coding tasks. ## Characteristics of deep agents. Claude Code is not an anomaly - most of the best coding or deep research agents have pretty complex system prompts. Without these system prompts, the agents would not be nearly as deep. Deep agents are better at executing on complex tasks over longer time horizons. Claude Code can spawn sub agents. Manus is another example of a deep agent that makes significant use of a file system for “memory”. ## Build your deep agent. You can easily create your own deep agent by passing in a custom prompt (will be inserted into the larger system prompt as custom instructions), custom tools, and custom subagents. We put together a simple example of a \\\"deep research\\\" agent built on top of `deepagents`.\", \"score\": 0.9930962, \"raw_content\": null}, {\"url\": \"https://dev.to/copilotkit/how-to-build-a-research-assistant-using-deep-agents-2bpg\", \"title\": \"How to Build a Research Assistant using Deep Agents\", \"content\": \"Today, we will build a Deep Agents powered research assistant using Tavily and connect it to a live Next.js UI with CopilotKit, so every step the agent takes streams to the frontend in real time. Popular agents like Claude Code, Deep Research and Manus get around this by following a common pattern: they plan first, externalize working context (often via files or a shell) and delegate isolated pieces of work to sub-agents. description: \\\"A research assistant powered by Deep Agents and CopilotKit - demonstrating planning, memory, subagents, and generative UI\\\",. This component renders a modal that displays the contents of a research file written by the Deep Agent. CopilotKit also provides the Agent Inspector, which is a live AG-UI runtime view that lets you inspect agent runs, state snapshots, messages and tool calls as they stream from the backend. You now have a fully working Deep Agents research assistant that plans, searches, and writes reports, with every step visible in the frontend as it happens.\", \"score\": 0.92944044, \"raw_content\": null}], \"response_time\": 0.7, \"request_id\": \"a43b3bdd-e9d1-4df9-a189-242ff3bf72d8\"}"
-# json_obj = JSON(json_str)
-# from rich.console import Console
-# console = Console()
-# console.print(json_obj)
+from pathlib import Path
+
+from src.remote_dev_team.agent_team_config import EXCLUDED_DIRS, EXCLUDED_FILE_EXTENSIONS, PRESERVED_HIDDEN_FILES, \
+    TEXT_FILE_EXTENSIONS
 
 
-# import subprocess
-#
-# # 运行命令，并拿到输出
-# result = subprocess.run(
-#     "dir",  # 你的命令
-#     shell=True,
-#     capture_output=True,  # 捕获输出
-#     text=True,            # 输出转字符串
-#     encoding="gbk",       # windows控制台使用 gbk编码
-#     errors="replace"      # 无法解码的字符用 替换
-# )
-#
-# # 打印结果
-# print("输出：", result.stdout)
-# print("错误：", result.stderr)
+def get_time_str(elapsed_time: float) -> str:
+    minutes = int(elapsed_time // 60)
+    seconds = elapsed_time % 60
+    if minutes > 0:
+        time_str = f"{minutes}分{seconds:.1f}秒"
+    else:
+        time_str = f"{seconds:.1f}秒"
+    return time_str
 
-# dict={
-#     "name": "张三",
-#     "age": 18,
-#     "sex": "男"
-# }
-# for k in dict:
-#     print(k, dict[k])
 
+def to_snake_case(name: str) -> str:
+    """将任务名称转换为蛇形命名（snake_case）。
+
+    转换规则：
+    1. 将所有字符转为小写
+    2. 将空格、连字符等非字母数字字符替换为下划线
+    3. 去除连续的下划线
+    4. 去除首尾的下划线
+
+    Args:
+        name: 原始任务名称，如 "Snake game", "Excel data process"
+
+    Returns:
+        蛇形命名的字符串，如 "snake_game", "excel_data_process"
+
+    Examples:
+        >>> to_snake_case("Snake game")
+        'snake_game'
+        >>> to_snake_case("Excel data process")
+        'excel_data_process'
+        >>> to_snake_case("CRUD manage")
+        'crud_manage'
+    """
+    import re
+    # 转为小写
+    name = name.lower()
+    # 将空格、连字符等非字母数字字符替换为下划线
+    name = re.sub(r'[^a-z0-9]+', '_', name)
+    # 去除连续的下划线
+    name = re.sub(r'_+', '_', name)
+    # 去除首尾的下划线
+    name = name.strip('_')
+    return name
+
+
+def should_skip_path(relative_path: Path) -> bool:
+    """判断是否应该跳过该路径（不下载）。
+
+    使用黑名单机制排除中间产物、缓存、临时文件等。
+
+    Args:
+        relative_path: 相对于任务根目录的路径
+
+    Returns:
+        bool: True 表示应该跳过，False 表示应该下载
+    """
+    name = relative_path.name
+
+    # 检查是否在排除目录中
+    for part in relative_path.parts:
+        if part in EXCLUDED_DIRS:
+            return True
+
+    # 检查文件扩展名
+    if name.endswith(tuple(EXCLUDED_FILE_EXTENSIONS)):
+        return True
+
+    # 特殊文件模式：排除隐藏文件（除了常见的配置文件）
+    if name.startswith('.') and name not in PRESERVED_HIDDEN_FILES:
+        return True
+
+    return False
+
+
+def write_content_to_file(local_path: Path, content: bytes) -> None:
+    """将字节内容写入本地文件，根据文件类型自动选择文本或二进制模式。
+
+    Args:
+        local_path: 本地文件路径
+        content: 文件内容（字节）
+    """
+    # 确保父目录存在
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 根据文件类型选择写入方式
+    file_ext = local_path.suffix.lower()
+
+    if file_ext in TEXT_FILE_EXTENSIONS:
+        # 文本文件：尝试 UTF-8 解码
+        try:
+            local_path.write_text(content.decode('utf-8'), encoding='utf-8')
+        except UnicodeDecodeError:
+            # 如果解码失败，当作二进制文件处理
+            local_path.write_bytes(content)
+    else:
+        # 二进制文件：直接写入 bytes
+        local_path.write_bytes(content)

@@ -3,8 +3,6 @@ from dataclasses import dataclass
 
 import yaml
 
-from src.paths import DATASETS_PATH
-
 logger = logging.getLogger(__name__)
 
 
@@ -64,11 +62,34 @@ def load_dataset(file_path) -> SoftwareDevDataset:
         loaded_data = yaml.safe_load(f)
     dataset = SoftwareDevDataset.from_dict(loaded_data)
 
-    logger.info(f"数据集名称: {dataset.name})")
+    logger.info(f"数据集名称: {dataset.name}")
     logger.info(f"数据集描述: {dataset.description}")
     logger.info(f"数据集任务数量: {len(dataset.tasks)}")
     return dataset
 
 
-software_dev_7_path = DATASETS_PATH / "software_dev_7.yaml"
-software_dev_7 = load_dataset(software_dev_7_path)
+# ========== TraceableTask 数据类 ==========
+
+@dataclass
+class TraceableTask:
+    """可追踪的任务对象，用于保存任务启动记录。"""
+    thread_id: str  # dev team为完成该任务而创建的线程ID
+    task_context_box_id: str
+    task: Task
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        """从字典创建对象(用于 YAML 反序列化)"""
+        return cls(
+            thread_id=data['thread_id'],
+            task_context_box_id=data['task_context_box_id'],
+            task=Task.from_dict(data['task'])
+        )
+
+    def to_dict(self):
+        """将对象转换为字典(用于 YAML 序列化)"""
+        return {
+            'thread_id': self.thread_id,
+            'task_context_box_id': self.task_context_box_id,
+            'task': self.task.to_dict()
+        }

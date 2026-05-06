@@ -2,7 +2,7 @@
 
 任务具体要求：
 基于所有团队成员（不包括Leader Tim）当前版本的系统提示词为TeamLeader Tim编写一个SKILL，该SKILL保存至名为deliverables-check
-（位于src/agentbay_based_dev_team/agent_resources/skills/leader/deliverables-check）的目录中。
+（位于src/remote_dev_team/agent_resources/skills/leader/deliverables-check）的目录中。
 
 该目录内部应该包含一个SKILL.md文件和本技能可能会使用的参考文件目录reference。
 该SKILL.md文件内容包含frontmatter和正式内容，正式内容包含标题、概述、使用说明（或者说工作流程），SKILL.md文件的正式内容应该保持简洁！
@@ -27,4 +27,4 @@
 核心原则：
 - 检查指南内的内容应该侧重交付物的完整性检查， 比如文档交付物就侧重文档内的章节是否符合”规则约束-文档标准“，编码任务交付物就应该侧重”规则约束-交付成果“章节内的完整性约束。
 - 不修改任何现有的团队专家的提示词文件。
-- 如果该技能已经存在，仅仅需要基于各团队成员当前版本的系统提示词，对其中每个文件分点给出修改意见。
+- 如果该技能已经存在，仅仅需要基于各团队成员当前版本的系统提示词，对其中每个文件分点给出修改意见，禁止你直接修改。

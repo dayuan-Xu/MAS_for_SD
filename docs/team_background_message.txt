@@ -1,0 +1,3 @@
+同等功能下，不需要sandbox id的工具优先于其他相同功能的工具，比如沙盒文件系统工具 `ls`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`优先于其他相同功能的文件系统工具。
+
+**禁止**你新建任何sandbox，当前软件开发任务的所有测试工作都必须基于sandbox id="s-04poml0umsyzw6k1p"，之后调用那些需要传入sandbox id的时候**只能用**该sandbox id。目前有一个该软件成果物，保存地址为'/tmp/persistent/agent_workspace/warehouse/2048_game/'，需要进行功能性测试。现在请你合理利用已有的各种工具对其完成功能性测试，调用已有工具对其进行功能性测试前，你可以先了解该软件成果物。在一次功能性测试尝试结束后向我报告结果。

@@ -36,5 +36,5 @@ def get_connection_pool():
                 kwargs=connection_kwargs,
             )
         except Exception as e:
-            raise RuntimeError("无法初始化数据库连接池") from e
+            raise RuntimeError("无法初始化Postgres数据库连接池，请检查相应 Docker 容器是否启动！") from e
     return _connection_pool
