@@ -4,10 +4,9 @@ from typing import cast
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Interrupt, Command, StreamPart
-from src.remote_dev_team.team_with_sandbox import DevTeamWithLinuxSandboxAndMCP
 
-from src.remote_dev_team.agentbay_based_team import DevTeamWithLinuxSandboxAndMCP
-from src.remote_dev_team.my_sandbox_backend import AgentBayBasedLinuxSandboxBackend
+from src.dev_team.my_backend import LinuxSandboxBackend
+from src.dev_team.team import AgentTeam
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +54,9 @@ def get_human_decisions(input_interrupt: Interrupt) -> list[dict]:
 
 
 # 运行给定的LangGraph，支持多轮对话（即每次人类输入引发一次ReAct循环，可以有多次人类对话直至人类输入exit）
-def multi_turn_conversation(agent: CompiledStateGraph | DevTeamWithLinuxSandboxAndMCP | DevTeamWithLinuxSandboxAndMCP,
+def multi_turn_conversation(agent: CompiledStateGraph | AgentTeam | AgentTeam,
                             run_config: RunnableConfig,
-                            sandbox: AgentBayBasedLinuxSandboxBackend | None = None):
+                            sandbox: LinuxSandboxBackend | None = None):
     """
     为DeepAgent设计的多轮对话，
     在values模式下流式输出父图、子图消息，流式输出版本version="v2"
@@ -68,7 +67,7 @@ def multi_turn_conversation(agent: CompiledStateGraph | DevTeamWithLinuxSandboxA
         run_config: 运行配置
         sandbox: 可选的沙盒实例，用于在退出时清理资源
     """
-    if not isinstance(agent, (DevTeamWithLinuxSandboxAndMCP, DevTeamWithLinuxSandboxAndMCP)) and not sandbox:
+    if not isinstance(agent, (AgentTeam, AgentTeam)) and not sandbox:
         raise ValueError("若提供了Agent实例（CompiledStateGraph），则务必提供相应的Sandbox实例")
 
     printed_msg_ids = set()  # 用于记录已经输出过的消息id，避免重复输出
@@ -160,16 +159,16 @@ def multi_turn_conversation(agent: CompiledStateGraph | DevTeamWithLinuxSandboxA
             logger.info("多轮对话结束，已明确传入一个沙盒实例，开始删除其中维持的会话")
             sandbox.delete_session()
         elif isinstance(agent,
-                        (DevTeamWithLinuxSandboxAndMCP, DevTeamWithLinuxSandboxAndMCP)) and agent.sandbox is not None:
+                        (AgentTeam, AgentTeam)) and agent.sandbox is not None:
             logger.info("多轮对话结束，开始删除AgentBayBasedTeam实例中的sandbox中的会话")
             agent.sandbox.delete_session()
 
 
 # 运行给定的LangGraph，支持多轮对话（即每次人类输入引发一次ReAct循环，可以有多次人类对话直至人类输入exit）
 async def async_multi_turn_conversation(
-        agent: CompiledStateGraph | DevTeamWithLinuxSandboxAndMCP | DevTeamWithLinuxSandboxAndMCP,
+        agent: CompiledStateGraph | AgentTeam | AgentTeam,
         run_config: RunnableConfig,
-        sandbox: AgentBayBasedLinuxSandboxBackend | None = None):
+        sandbox: LinuxSandboxBackend | None = None):
     """
     为DeepAgent设计的多轮对话，
     在values模式下流式输出父图、子图消息，流式输出版本version="v2"
@@ -180,7 +179,7 @@ async def async_multi_turn_conversation(
         run_config: 运行配置
         sandbox: 可选的沙盒实例，用于在退出时清理资源
     """
-    if not isinstance(agent, (DevTeamWithLinuxSandboxAndMCP, DevTeamWithLinuxSandboxAndMCP)) and not sandbox:
+    if not isinstance(agent, (AgentTeam, AgentTeam)) and not sandbox:
         raise ValueError("若提供了Agent实例（CompiledStateGraph），则务必提供相应的Sandbox实例")
 
     printed_msg_ids = set()  # 用于记录已经输出过的消息id，避免重复输出
@@ -272,6 +271,6 @@ async def async_multi_turn_conversation(
             logger.info("多轮对话结束，已明确传入一个沙盒实例，开始删除其中维持的会话")
             sandbox.delete_session()
         elif isinstance(agent,
-                        (DevTeamWithLinuxSandboxAndMCP, DevTeamWithLinuxSandboxAndMCP)) and agent.sandbox is not None:
+                        (AgentTeam, AgentTeam)) and agent.sandbox is not None:
             logger.info("多轮对话结束，开始删除AgentBayBasedTeam实例中的sandbox中的会话")
             agent.sandbox.delete_session()

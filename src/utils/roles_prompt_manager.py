@@ -9,12 +9,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Dict
 
-from src.paths import DEEP_AGENT_SYSTEM_PROMPTS_FILES
+from src.paths import AGENT_SYSTEM_PROMPTS_FILES
 
 logger = logging.getLogger(__name__)
 
 # 全局提示词目录（用于缓存键）
-_PROMPTS_DIR = DEEP_AGENT_SYSTEM_PROMPTS_FILES
+_PROMPTS_DIR = AGENT_SYSTEM_PROMPTS_FILES
 
 # 确保目录存在（模块加载时执行一次）
 _PROMPTS_DIR.mkdir(parents=True, exist_ok=True)

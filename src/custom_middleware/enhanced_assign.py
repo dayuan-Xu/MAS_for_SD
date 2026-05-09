@@ -2,10 +2,25 @@
 # 
 # 核心特性：
 # 1. 专家智能体编译时传入 checkpointer，实现独立的状态持久化
-# 2. 通过 expert_thread_ids 字典（每个thread_id可视为文件名）管理每个专家的 thread_id，同时结合checkpoint_ns（可视为文件夹）完成专家图状态正确访问
+# 2. 通过 EnhancedAssignMiddleware UserAgent state中的expert_thread_ids 字典（每个thread_id可视为文件名）管理每个专家的 thread_id，
+# 同时结合checkpoint_ns（可视为文件夹）完成专家图状态的正确访问
 # 3. assign 工具调用时自动检测并生成 thread_id（懒加载策略）
 # 4. 专家状态与 Leader 状态完全解耦
+# 5. 目前只有Leader Agent使用了EnhancedAssignMiddleware
+#
+# 缺陷：
+# 1. 被调用的专家智能体的短期记忆，即thread id依旧完全依附于主调智能体状态中的expert_thread_ids 字典
+#    这样的话，一个智能体在同一个软件开发任务中的短期记忆，无法被多个不同的智能体提供assign注入，并且不同智能体发消息必须是同步调用收消息的智能体。
+# 2. 缺陷产生原因：EnhancedAssignMiddleware 或者说 想发消息的智能体 ，它们直接拥有智能体对象而不是智能体的InBox
+#   同时团队中每个智能体的运行是由assign工具出发的
+# 3. 缺陷解决办法：
+# 每个智能体都拥有一个 CollaborateMiddleware，该中间件为智能体提供一个 Tasks/Attentions 列表、一个 send_message  工具
+# sender message只会为目标智能体创建一个关注点，并不会立即触发该智能体的运行
+# InBox中每条消息包含task_name-决定当前智能体启用哪条短期记忆、sender_name-告知接受任务的智能体完成任务后该向谁响应、private_message
+# 五个智能体并行运行，只要有关注点存在，就触发当前智能体的一次运行
+# 只要有关注点存在触，就定期触发一次当前智能体的一次运行，发消息者发消息时不需要专门传入task_name
 
+# 理想情况：
 import asyncio
 import logging
 import threading
@@ -155,9 +170,10 @@ class AssignToolSchema(BaseModel):
     )
 
 
-def _build_assign_tool(
-        experts: list[_ExpertAgentSpec],
-) -> StructuredTool:
+def _build_assign_tool(*,
+                       user_name: str = "Tim Leader",
+                       experts: list[_ExpertAgentSpec],
+                       ) -> StructuredTool:
     """构建assign工具，支持向专家团队委派任务。
     
     ⭐ 关键改进：
@@ -165,6 +181,7 @@ def _build_assign_tool(
     - 调用专家时传入其专属的 thread_id，让专家自主持久化状态
     
     Args:
+        user_name: 用户名称，用于注入private message作为send name
         experts: 专家智能体规格列表
         
     Returns:
@@ -239,6 +256,7 @@ def _build_assign_tool(
             logger.debug(f"♻️ 当前专家不是第一次被assign，复用专家 '{expert_name}' 已有的 thread_id: {expert_thread_id}")
 
         # 构建专家输入状态（因为专家有自己的 checkpointer，只需要构建一条人类消息，不要获取其完整的最新图状态）
+        private_message = f"Message from {user_name}:\n {private_message}"
         expert_input = {"messages": [HumanMessage(content=private_message)]}
 
         return expert, expert_input, expert_thread_id
@@ -403,7 +421,7 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
     Example:
         ```python
         from src.custom_middleware.enhanced_assign import EnhancedAssignMiddleware
-        from src.remote_dev_team.team_experts import team_experts
+        from src.dev_team.team_experts import team_experts
         
         leader = create_agent(
             model=llm,
@@ -423,6 +441,7 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
     def __init__(
             self,
             *,
+            user_name: str = "Tim Leader",
             experts: Sequence[CompiledExpertAgent] | None = None,
             system_prompt: str | None = ASSIGN_SYSTEM_PROMPT,
             **kwargs: Any,
@@ -430,6 +449,7 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
         """初始化EnhancedAssignMiddleware。
 
         Args:
+            user_name: 充当发消息时的sender name
             experts: 专家团队列表，默认为team_experts中定义的所有专家
             system_prompt: 自定义系统提示词，默认为ASSIGN_SYSTEM_PROMPT
             **kwargs: 传递给父类的其他参数
@@ -450,10 +470,13 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
                 "runnable": compiled["runnable"]
             })
 
-        # 构建assign工具
-        assign_tool = _build_assign_tool(expert_specs)
+        self.user_name = user_name
 
-        self.logger.info(f"团队协作中间件 EnhancedAssignMiddleware 初始化完成，已注册 {len(expert_specs)} 个专家")
+        # 构建assign工具
+        assign_tool = _build_assign_tool(user_name=self.user_name, experts=expert_specs)
+
+        self.logger.info(
+            f"为用户 {self.user_name} 创建的团队协作中间件 EnhancedAssignMiddleware 初始化完成，已注册了 {len(expert_specs)} 个专家")
 
         # 构建系统提示词
         if system_prompt and expert_specs:

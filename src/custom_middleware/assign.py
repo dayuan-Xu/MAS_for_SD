@@ -1,7 +1,7 @@
 # 1. 参考资料：langchain内置的SubAgentMiddleware，位于.venv/Lib/site-packages/deepagents/middleware/subagents.py
 # 2。 核心需求：
 # 基于SubAgentMiddleware在src/custom_middleware/assign.py，
-# 实现一个AssignMiddleware，提供一个assign工具，后续装配给leader（src/remote_dev_team/leader.py:66），
+# 实现一个AssignMiddleware，提供一个assign工具，后续装配给leader（src/dev_team/leader.py:66），
 # 从而允许leader只做为一个协调组织者，负责将软件开发中的某个阶段性任务，信任地委派给其他成员智能体（比如David、Cindy、Alice、Eva）去完成。
 # 同时配分配到阶段性任务地智能体，有些是必须具备长期记忆的，因此这些智能体在creat_agent创建时必须使checkpointer为True，
 # 以此显式指明被调用的智能体专家可以使用，leader所用的那个thread id，以便它们在leader多次调用assign工具多次分配任务之间保持记忆。
@@ -384,7 +384,7 @@ class AssignMiddleware(AgentMiddleware[AssignState, ContextT, ResponseT]):
     Example:
         ```python
         from src.custom_middleware.assign import AssignMiddleware
-        from src.remote_dev_team.team_experts import team_experts
+        from src.dev_team.team_experts import team_experts
         
         leader = create_agent(
             model=llm,
@@ -490,11 +490,11 @@ def test_assign_middleware():
 
     from langchain_core.runnables import RunnableConfig
 
-    from src.remote_dev_team.team_with_sandbox import DevTeamWithLinuxSandboxAndMCP
+    from src.dev_team.team_with_sandbox import DevTeamWithLinuxSandboxAndMCP
     from src.utils.graph_running import multi_turn_conversation
-    from src.remote_dev_team.my_sandbox_backend import AgentBayBasedLinuxSandboxBackend
+    from src.dev_team.my_backend import LinuxSandboxBackend
     # 创建与当前任务关联的沙盒实例
-    sandbox = AgentBayBasedLinuxSandboxBackend(task_name="Dev team test")
+    sandbox = LinuxSandboxBackend(task_name="Dev team test")
 
     # 创建dev_team实例
     dev_team = DevTeamWithLinuxSandboxAndMCP(sandbox)

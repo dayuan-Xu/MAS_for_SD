@@ -54,6 +54,5 @@ htmlcov/
 # 项目配置文件（包含 thread_id 映射）
 /.config/
 
-/src/remote_dev_team/warehouse/
+/src/dev_team/warehouse/
 /.lingma/
-/.langgraph_api/

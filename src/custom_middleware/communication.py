@@ -40,7 +40,7 @@ from langchain_core.tools import StructuredTool
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from src.remote_dev_team.my_sandbox_backend import AgentBayBasedLinuxSandboxBackend
+from src.dev_team.my_backend import LinuxSandboxBackend
 
 
 class MessageBusState(AgentState):
@@ -88,8 +88,8 @@ class MessageBusMiddleware(AgentMiddleware[MessageBusState, ContextT, ResponseT]
     
     Example:
         ```python
-        from src.remote_dev_team.my_sandbox import my_sandbox_backend
-        from src.remote_dev_team.message_bus_middleware import MessageBusMiddleware
+        from src.dev_team.my_sandbox import my_sandbox_backend
+        from src.dev_team.message_bus_middleware import MessageBusMiddleware
         
         # 创建共享的 backend
         backend = my_sandbox_backend
@@ -123,7 +123,7 @@ class MessageBusMiddleware(AgentMiddleware[MessageBusState, ContextT, ResponseT]
     def __init__(
             self,
             message_bus_root: str = MESSAGE_BUS_ROOT,
-            backend: AgentBayBasedLinuxSandboxBackend | None = None,
+            backend: LinuxSandboxBackend | None = None,
     ):
         """初始化消息总线中间件。
         
@@ -203,7 +203,7 @@ class MessageBusMiddleware(AgentMiddleware[MessageBusState, ContextT, ResponseT]
         """获取收件箱路径（动态计算）。"""
         return f"{self.message_bus_root}/{self.agent_name}_inbox"
 
-    def _get_backend(self, runtime: ToolRuntime | None = None) -> AgentBayBasedLinuxSandboxBackend:
+    def _get_backend(self, runtime: ToolRuntime | None = None) -> LinuxSandboxBackend:
         """获取 backend 实例。
         
         Args:

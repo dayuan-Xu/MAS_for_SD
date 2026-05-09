@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.remote_dev_team.agent_team_config import EXCLUDED_DIRS, EXCLUDED_FILE_EXTENSIONS, PRESERVED_HIDDEN_FILES, \
+from src.dev_team.team_config import EXCLUDED_DIRS, EXCLUDED_FILE_EXTENSIONS, PRESERVED_HIDDEN_FILES, \
     TEXT_FILE_EXTENSIONS
 
 
