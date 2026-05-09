@@ -56,3 +56,5 @@ htmlcov/
 
 /src/dev_team/warehouse/
 /.lingma/
+/registered_tasks/
+/warehouse/
