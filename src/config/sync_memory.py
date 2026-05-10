@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def _is_database_initialized(pool) -> bool:
     """检查数据库是否已经初始化
-    
+
     Returns:
         bool: True 表示已初始化，False 表示未初始化
     """
@@ -32,7 +32,7 @@ def _is_database_initialized(pool) -> bool:
 
 def _get_migration_version(pool) -> int:
     """获取当前数据库的迁移版本号
-    
+
     Returns:
         int: 当前版本号，如果表不存在则返回 -1
     """
@@ -46,22 +46,6 @@ def _get_migration_version(pool) -> int:
 
 
 if settings.USE_POSTGRES_CHECKPOINTER:
-    db_user = settings.POSTGRES_DB_USER
-    db_password = settings.POSTGRES_DB_PASSWORD
-    db_host = settings.POSTGRES_DB_HOST
-    db_port = settings.POSTGRES_DB_PORT
-    db_name = settings.POSTGRES_DB_NAME
-    ssl_mode = settings.POSTGRES_DB_SSL_MODE
-    DB_URI = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}?sslmode={ssl_mode}"
-
-    # DB_URI = "postgresql://postgres:postgres@localhost:5442/postgres?sslmode=disable"
-    # 协议：postgresql:// 表示使用 PostgreSQL 协议。
-    # 用户信息：postgres:postgres 表示用户名为 postgres，密码也为 postgres。
-    # 主机：@localhost 表示数据库位于本地机器。
-    # 端口：:5442 表示数据库服务运行在 5442 端口（默认是 5432）。
-    # 数据库名：/postgres 表示连接的数据库名为 postgres。
-    # SSL 模式：?sslmode=disable 表示禁用 SSL 加密连接。
-
     pool = get_connection_pool()
     my_checkpointer = PostgresSaver(pool)
 

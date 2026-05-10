@@ -1,7 +1,15 @@
+import logging
+import re
 from pathlib import Path
+from typing import Literal
+
+from deepagents.backends.protocol import FileOperationError
+from langchain_core.messages import AIMessage
 
 from src.dev_team.team_config import EXCLUDED_DIRS, EXCLUDED_FILE_EXTENSIONS, PRESERVED_HIDDEN_FILES, \
-    TEXT_FILE_EXTENSIONS
+    TEXT_FILE_EXTENSIONS, TASK_DONE_IDENTIFIER, TASK_REJECTED_IDENTIFIER
+
+logger = logging.getLogger(__name__)
 
 
 def get_time_str(elapsed_time: float) -> str:
@@ -37,7 +45,6 @@ def to_snake_case(name: str) -> str:
         >>> to_snake_case("CRUD manage")
         'crud_manage'
     """
-    import re
     # 转为小写
     name = name.lower()
     # 将空格、连字符等非字母数字字符替换为下划线
@@ -101,3 +108,118 @@ def write_content_to_file(local_path: Path, content: bytes) -> None:
     else:
         # 二进制文件：直接写入 bytes
         local_path.write_bytes(content)
+
+
+def process_command_parts(cmd):
+    """处理命令字符串，在每个 python 子命令前添加 PYTHONUTF8=1"""
+    # 匹配命令分隔符：&& || ; | （前后可能有空格）
+    # 同时保留分隔符以便重组
+    parts = re.split(r'(\s*[;&|]\s*)', cmd)
+
+    result = []
+    for i, part in enumerate(parts):
+        # 如果是命令分隔符，直接添加
+        if re.match(r'^\s*[;&|]\s*$', part):
+            result.append(part)
+        else:
+            # 这是实际命令部分，检查是否以 python 开头
+            stripped = part.strip()
+            if stripped and not stripped.startswith('PYTHONUTF8='):
+                # 检查是否以 python 或 python3 开头（忽略前导空格）
+                if re.match(r'^python3?\b', stripped, re.IGNORECASE):
+                    # 在 python 命令前添加 PYTHONUTF8=1
+                    # 保持原有的前导空格
+                    leading_spaces = len(part) - len(part.lstrip())
+                    result.append(' ' * leading_spaces + f'PYTHONUTF8=1 {stripped}')
+                else:
+                    result.append(part)
+            else:
+                result.append(part)
+
+    return ''.join(result)
+
+
+def map_agentbay_error_to_file_operation_error(error_message: str) -> FileOperationError | Literal[
+    "Empty error message", "File operation error parse failure"]:
+    """将 AgentBay 的错误信息映射到标准的 FileOperationError 类型。
+    
+    Args:
+        error_message: AgentBay 返回的错误信息
+        
+    Returns:
+        标准化的 FileOperationError 类型
+    """
+    if not error_message:
+        logger.error("无法映射错误信息到 FileOperationError: 错误信息为空")
+        return "Empty error message"
+    logger.debug(f"开始尝试映射错误信息到 FileOperationError")
+    error_lower = error_message.lower()
+
+    # 文件不存在相关错误
+    if any(keyword in error_lower for keyword in [
+        "not found", "no such file", "doesn't exist", "does not exist",
+        "file not found", "path not found"
+    ]):
+        return "file_not_found"
+
+    # 权限拒绝相关错误
+    if any(keyword in error_lower for keyword in [
+        "permission denied", "access denied", "forbidden",
+        "unauthorized", "permission", "access"
+    ]):
+        return "permission_denied"
+
+    # 目录相关错误
+    if any(keyword in error_lower for keyword in [
+        "is a directory", "is_directory", "directory",
+        "expected file but got directory"
+    ]):
+        return "is_directory"
+
+    # 路径无效相关错误
+    if any(keyword in error_lower for keyword in [
+        "invalid path", "invalid", "malformed",
+        "bad path", "path syntax"
+    ]):
+        return "invalid_path"
+
+    # 默认返回 file_not_found（最常见的错误）
+    logger.error(f"无法映射错误信息到 FileOperationError。错误信息：\n{error_message}")
+    return "File operation error parse failure"
+
+
+def target_str_in_AIMessage(target: str, msg: AIMessage):
+    """检查消息是否包含 TASK_DONE 标识"""
+    content = msg.content
+    # 情况1：纯字符串
+    if isinstance(content, str):
+        return target in content
+
+    # 情况2：列表类型
+    if isinstance(content, list):
+        for item in content:
+            # 子项是字符串
+            if isinstance(item, str):
+                if target in item:
+                    return True
+            # 子项是字典（OpenAI 消息格式）
+            elif isinstance(item, dict):
+                if item.get("type") == "text":
+                    text_content = item.get("text", "")
+                    if target in text_content:
+                        return True
+                # 处理其他类型的 content（如 image_url 等）
+                elif item.get("type"):
+                    logger.warning(f"跳过非文本内容类型: {item.get('type')}")
+
+    return False
+
+
+def is_task_done(msg: AIMessage):
+    """检查消息是否包含 TASK_DONE 标识"""
+    return target_str_in_AIMessage(TASK_DONE_IDENTIFIER, msg)
+
+
+def is_task_rejected(msg: AIMessage):
+    """检查消息是否包含 TASK_REJECTED 标识"""
+    return target_str_in_AIMessage(TASK_REJECTED_IDENTIFIER, msg)

@@ -17,9 +17,6 @@ DATASETS_PATH = PROJECT_ROOT_DIR / "datasets"
 # 智能体提示词文件路径
 PROMPTS_DIR = SRC_DIR / "prompts_md_files"
 
-# agent_team的提示词文件路径
-AGENT_SYSTEM_PROMPTS_FILES = PROMPTS_DIR / "agent"
-
 # agentbay_based_dev_team子包目录
 DEV_TEAM_PATH = SRC_DIR / "dev_team"
 
@@ -27,10 +24,10 @@ DEV_TEAM_PATH = SRC_DIR / "dev_team"
 REGISTERED_TASKS_PATH = PROJECT_ROOT_DIR / "registered_tasks"
 
 # agent的资源文件路径
-AGENT_RESOURCES_PATH = DEV_TEAM_PATH / "agent_resources"
+AGENT_RESOURCES_PATH = SRC_DIR / "agent_resources"
 
 # 仓库路径
-LOCAL_WAREHOUSE_FOR_TASK_RESULT = PROJECT_ROOT_DIR / "warehouse"
+LOCAL_WAREHOUSE_PATH = PROJECT_ROOT_DIR / "warehouse"
 
 # 数据集文件路径
 SOFTWARE_DEV_7_PATH = DATASETS_PATH / "software_dev_7.yaml"

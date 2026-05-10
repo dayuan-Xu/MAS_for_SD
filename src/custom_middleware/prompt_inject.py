@@ -17,7 +17,8 @@ import logging
 from typing import Any, Callable
 
 from deepagents.middleware._utils import append_to_system_message
-from langchain.agents.middleware.types import AgentMiddleware, AgentState, ContextT, ModelRequest, ModelResponse, ResponseT
+from langchain.agents.middleware.types import AgentMiddleware, AgentState, ContextT, ModelRequest, ModelResponse, \
+    ResponseT
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +62,15 @@ class SystemPromptInjectMiddleware(AgentMiddleware[AgentState[ResponseT], Contex
         """
         if not prompt or not prompt.strip():
             raise ValueError("prompt 不能为空")
-        
+
         self.prompt = prompt.strip()
         logger.info(f"SystemPromptInjectMiddleware 初始化完成，提示词长度: {len(self.prompt)} 字符")
-        logger.debug(f"注入的提示词内容:\n{self.prompt}")
+        logger.debug(f"为智能体系统消息注入的提示词内容:\n{self.prompt}")
 
     def wrap_model_call(
-        self,
-        request: ModelRequest[ContextT],
-        handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
+            self,
+            request: ModelRequest[ContextT],
+            handler: Callable[[ModelRequest[ContextT]], ModelResponse[ResponseT]],
     ) -> ModelResponse[ResponseT]:
         """在模型调用前注入提示词到 system message
         
@@ -80,18 +81,17 @@ class SystemPromptInjectMiddleware(AgentMiddleware[AgentState[ResponseT], Contex
         Returns:
             模型调用响应
         """
-        logger.debug("📝 [PromptInject] 开始注入系统提示词")
-        
+
         # 将提示词追加到现有的 system message
         new_system_message = append_to_system_message(request.system_message, self.prompt)
-        
+
         # 使用更新后的 system message 调用 handler
         return handler(request.override(system_message=new_system_message))
 
     async def awrap_model_call(
-        self,
-        request: ModelRequest[ContextT],
-        handler: Callable[[ModelRequest[ContextT]], Any],
+            self,
+            request: ModelRequest[ContextT],
+            handler: Callable[[ModelRequest[ContextT]], Any],
     ) -> ModelResponse[ResponseT]:
         """异步版本的模型调用前提示词注入
         
@@ -102,10 +102,9 @@ class SystemPromptInjectMiddleware(AgentMiddleware[AgentState[ResponseT], Contex
         Returns:
             模型调用响应
         """
-        logger.debug("📝 [PromptInject] 开始异步注入系统提示词")
-        
+
         # 将提示词追加到现有的 system message
         new_system_message = append_to_system_message(request.system_message, self.prompt)
-        
+
         # 使用更新后的 system message 调用 handler
         return await handler(request.override(system_message=new_system_message))

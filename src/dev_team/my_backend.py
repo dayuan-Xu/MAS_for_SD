@@ -19,7 +19,8 @@ from deepagents.backends.utils import _get_file_type
 from src.config.config_logging import setup_logging
 from src.config.settings import settings
 from src.dev_team.team_config import CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX, AGENTBAY_IMAGE_ID
-from src.utils.common import to_snake_case, should_skip_path, write_content_to_file
+from src.utils.common import to_snake_case, should_skip_path, write_content_to_file, process_command_parts, \
+    map_agentbay_error_to_file_operation_error
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,8 @@ class LinuxSandboxBackend(BaseSandbox):
         self._task_context_box_mount_path_prefix = CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX[
             f'{self.sandbox_type}']
         self.task_context_box_mount_path = f"{self._task_context_box_mount_path_prefix}/{self._task_context_box_leaf_dir_name}"
-        logger.info(f"当前Task Context Box 的云端挂载路径为{self.task_context_box_mount_path}")
+        logger.info(
+            f"当前Task Context Box 的云端挂载路径为{self.task_context_box_mount_path}\n智能体必须在该路径下进行开发、文件写入，否则任务成果物无法下载到本地！")
 
         self._initialize_session()  # 创建会话
 
@@ -243,27 +245,45 @@ class LinuxSandboxBackend(BaseSandbox):
 
         # 为 Python 命令添加 UTF-8 编码环境变量,以便智能体调用read、ls、grep、glob工具时看到正确的文字输出。
         # 检测是否是 Python 命令(已知 BaseSandbox.read/ls/grep/glob 等方法执行时,底层会调用execute方法执行python代码,方式大致为python -c "python代码")
-        # 为 Python 命令添加 UTF-8 编码环境变量
+        # 关键修复：只在 python/python3 命令前添加环境变量，而不是在整个命令前添加
         if 'python' in command.lower():
-            if self.sandbox_type == "windows":
-                # Windows CMD 语法:使用 set 命令
-                command = f"set PYTHONUTF8=1 && {command}"
-            elif self.sandbox_type == "linux":
-                # Linux/Unix 语法
-                command = f"PYTHONUTF8=1 {command}"
-            logger.debug(f"🔧 已为 Python 命令添加 UTF-8 编码环境变量 (sandbox_type={self.sandbox_type})")
+
+            if self.sandbox_type == "linux":
+                # Linux/Unix: 使用正则表达式找到所有 python/python3 命令并在其前添加 PYTHONUTF8=1
+                # 策略：将命令按 && || ; | 分割，对每个子命令检查是否以 python 开头
+                modified_command = process_command_parts(command)
+
+                if modified_command != command:
+                    logger.debug(f"🔧 已为 Python 命令添加 UTF-8 编码环境变量")
+                    logger.debug(f"   原始命令: {command}")
+                    logger.debug(f"   修改后: {modified_command}")
+                    command = modified_command
+
+            elif self.sandbox_type == "windows":
+                # Windows CMD: 需要在每个 python 命令前添加 set PYTHONUTF8=1 &&
+                # 但 Windows 下处理更复杂，简单起见，如果命令以 python 开头则添加
+                if command.strip().lower().startswith('python'):
+                    command = f"set PYTHONUTF8=1 && {command}"
+                    logger.debug(f"🔧 已为 Python 命令添加 UTF-8 编码环境变量 (Windows)")
 
         # agentbay execute工具默认50秒超时
         command_result: CommandResult = self._session.command.execute_command(command, timeout_ms=timeout_ms)
 
         output = command_result.output  # shell命令执行后的stdout+stderr
+        exit_code = command_result.exit_code
 
         if not command_result.success:
-            exit_code = 1
+            error_msg = command_result.error_message
             logger.error(
-                f"❌ session.command.execute_command 执行失败: {command_result.error_message}，相应命令：{command}")
-        else:
-            exit_code = 0
+                f"❌ session.command.execute_command 执行失败:\n"
+                f"失败的shell命令：\n{command}\n"
+                f"智能体所见的shell工具执行结果：\n{error_msg}\n"
+                f"API返回的错误消息：\n{error_msg}\n")
+            return ExecuteResponse(
+                output=error_msg,
+                exit_code=exit_code,
+                truncated=False
+            )
 
         return ExecuteResponse(
             output=output,
@@ -306,17 +326,20 @@ class LinuxSandboxBackend(BaseSandbox):
                 responses.append(FileUploadResponse(path=file_path))
             else:
                 error_msg = getattr(upload_result, 'error_message', '未知错误')
-                logger.error(f"❌ session.file_system.upload_file 执行失败: {file_path}, 错误: {error_msg}",
-                             exc_info=True)
+                logger.error(
+                    f"❌ session.file_system.upload_file 执行失败:\n目标文件路径 {file_path},\n错误: {error_msg}")
                 # 清理临时文件
                 if temp_file_path and os.path.exists(temp_file_path):
                     try:
                         os.unlink(temp_file_path)
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to clean up temp file: {temp_file_path}, Error: {e}")
+
+                # 将 AgentBay 错误映射到标准 FileOperationError
+                standardized_error = map_agentbay_error_to_file_operation_error(error_msg)
                 responses.append(FileUploadResponse(
                     path=file_path,
-                    error=f"上传失败: {error_msg}"
+                    error=standardized_error
                 ))
         return responses
 
@@ -356,17 +379,20 @@ class LinuxSandboxBackend(BaseSandbox):
                 ))
             else:
                 error_msg = getattr(download_result, 'error_message', '未知错误')
-                logger.error(f"❌ session.file_system.download_file 执行失败: {file_path}, 错误: {error_msg}",
-                             exc_info=True)
+                logger.error(
+                    f"❌ session.file_system.download_file 执行失败:\n目标文件路径 {file_path},\n错误: {error_msg}")
                 # 清理临时文件
                 if temp_file_path and os.path.exists(temp_file_path):
                     try:
                         os.unlink(temp_file_path)
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to clean up temp file: {temp_file_path}, Error: {e}")
+
+                # 将 AgentBay 错误映射到标准 FileOperationError
+                standardized_error = map_agentbay_error_to_file_operation_error(error_msg)
                 responses.append(FileDownloadResponse(
                     path=file_path,
-                    error=f"下载失败: {error_msg}"
+                    error=standardized_error
                 ))
 
         return responses
@@ -573,7 +599,7 @@ class LinuxSandboxBackend(BaseSandbox):
     def _download_recursive(self, cloud_dir: str, local_dir: Path) -> int:
         """递归下载云端目录到本地（智能过滤中间产物）。
 
-        ⭐ 优化：使用 AgentBay 原生的 download_file() API，而不是 read_file()
+        使用 AgentBay 原生的 download_file() API，而不是 read_file()
 
         Args:
             cloud_dir: 云端目录路径
@@ -582,8 +608,6 @@ class LinuxSandboxBackend(BaseSandbox):
         Returns:
             下载的文件数量
         """
-        import tempfile
-        import os
 
         downloaded_count = 0
         skipped_count = 0
@@ -591,9 +615,11 @@ class LinuxSandboxBackend(BaseSandbox):
         try:
             list_result = self._session.file_system.list_directory(cloud_dir)
             if not list_result.success or not list_result.entries:
+                logger.error(
+                    f"❌ session.file_system.list_directory调用失败，\n 目标路径：{cloud_dir}\n错误信息:\n {list_result.error_message}")
                 return 0
 
-            # ⭐ 调试：打印第一个 entry 的所有属性，了解其结构
+            # 打印第一个 entry 的所有属性，了解其结构
             if list_result.entries:
                 first_entry = list_result.entries[0]
                 logger.debug(f"🔍 DirectoryEntry 对象属性: {dir(first_entry)}")
@@ -604,7 +630,7 @@ class LinuxSandboxBackend(BaseSandbox):
                         logger.debug(f"   - {attr}: {getattr(first_entry, attr)}")
 
             for entry in list_result.entries:
-                # ⭐ 修复：尝试多种可能的属性名
+                # 尝试多种可能的属性名
                 cloud_path = None
                 for attr_name in ['path', 'full_path', 'file_path', 'entry_path']:
                     if hasattr(entry, attr_name):
@@ -621,7 +647,7 @@ class LinuxSandboxBackend(BaseSandbox):
                     logger.error(f"❌ 无法找到 entry 的路径属性，可用属性: {dir(entry)}", exc_info=True)
                     continue
 
-                # ⭐ 关键修复：统一使用 POSIX 路径格式（正斜杠）进行相对路径计算
+                # 统一使用 POSIX 路径格式（正斜杠）进行相对路径计算
                 # 云端路径始终是 Linux 格式（正斜杠），不能用 Windows 的 Path 对象处理
                 base_path = f"{self._task_context_box_mount_path_prefix}/{self._task_context_box_leaf_dir_name}"
 
@@ -637,7 +663,7 @@ class LinuxSandboxBackend(BaseSandbox):
                 # 现在才转换为 Path 对象用于本地文件系统操作
                 relative_path = Path(relative_path_str)
 
-                # ⭐ 检查是否应该跳过
+                # 检查是否应该跳过
                 if should_skip_path(relative_path):
                     skipped_count += 1
                     continue
@@ -649,7 +675,7 @@ class LinuxSandboxBackend(BaseSandbox):
                     local_path.mkdir(parents=True, exist_ok=True)
                     downloaded_count += self._download_recursive(cloud_path, local_dir)
                 else:
-                    # ⭐ 关键优化：使用临时文件 + download_file() API
+                    # 使用临时文件 + download_file() API
                     temp_file_path = None
                     try:
                         # 创建临时文件
@@ -667,7 +693,7 @@ class LinuxSandboxBackend(BaseSandbox):
                             with open(temp_file_path, 'rb') as f:
                                 file_content = f.read()
 
-                            # ⭐ 使用统一的文件写入方法
+                            # 使用统一的文件写入方法
                             write_content_to_file(local_path, file_content)
 
                             downloaded_count += 1
@@ -757,6 +783,7 @@ class LinuxSandboxBackend(BaseSandbox):
                 f"      session_id={self._session_id},\n"
                 f"      reuse_existing_task_context_box={self.reuse_existing},\n"
                 f"      task_context_box_id={self.task_context_box_id},\n"
+                f"      task_context_box_name={self.task_context_box_name}"
                 f"      sandbox_max_running_time={self._sandbox_max_running_time_str},\n"
                 f"      idle_timeout={self._idle_timeout})")
 
@@ -797,7 +824,7 @@ if __name__ == "__main__":
 
     # 手动下载task context box到本地
     setup_logging()
-    task_name_ = "Tank battle game"
-    local_absolute_dir = r"/src/dev_team\warehouse\Tank battle game\2026_05_08_19_47_55"
+    task_name_ = "CRUD manage_2026_05_10_17_24_17"
+    local_absolute_dir = f"./warehouse/T{task_name_}"
     with LinuxSandboxBackend(task_name=task_name_) as sandbox:
         sandbox.download_task_artifacts(Path(local_absolute_dir))

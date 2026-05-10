@@ -3,21 +3,21 @@ from deepagents.backends import FilesystemBackend
 
 from src.paths import AGENT_RESOURCES_PATH
 
-AGENTBAY_BASED_AGENT_SKILL_PATH = AGENT_RESOURCES_PATH / "skills"
-AGENTBAY_BASED_AGENT_MEMORY_PATH = AGENT_RESOURCES_PATH / "memory"
+AGENT_SKILL_PATH = AGENT_RESOURCES_PATH / "skills"
+AGENT_MEMORY_PATH = AGENT_RESOURCES_PATH / "memory"
 
 # 将智能体对不同路径的文件操作路由到不同的后端
 MY_COMPOSITE_BACKEND_ROUTES = {
     "windows": {
-        "C:/tmp/persistent/agent_workspace/skills/": FilesystemBackend(root_dir=AGENTBAY_BASED_AGENT_SKILL_PATH,
+        "C:/tmp/persistent/agent_workspace/skills/": FilesystemBackend(root_dir=AGENT_SKILL_PATH,
                                                                        virtual_mode=True),
-        "C:/tmp/persistent/agent_workspace/memory/": FilesystemBackend(root_dir=AGENTBAY_BASED_AGENT_MEMORY_PATH,
+        "C:/tmp/persistent/agent_workspace/memory/": FilesystemBackend(root_dir=AGENT_MEMORY_PATH,
                                                                        virtual_mode=True),
     },
     "linux": {
-        "/tmp/persistent/agent_workspace/skills/": FilesystemBackend(root_dir=AGENTBAY_BASED_AGENT_SKILL_PATH,
+        "/tmp/persistent/agent_workspace/skills/": FilesystemBackend(root_dir=AGENT_SKILL_PATH,
                                                                      virtual_mode=True),
-        "/tmp/persistent/agent_workspace/memory/": FilesystemBackend(root_dir=AGENTBAY_BASED_AGENT_MEMORY_PATH,
+        "/tmp/persistent/agent_workspace/memory/": FilesystemBackend(root_dir=AGENT_MEMORY_PATH,
                                                                      virtual_mode=True),
     }
 }
@@ -30,11 +30,28 @@ LEADER_SKILL_PATH = {
 
 ENGINEER_SKILL_PATH = {
     "linux": "/tmp/persistent/agent_workspace/skills/engineer",
-    "windows": "C:/tmp/persistent/agent_workspace/skills/engineer"}
+    "windows": "C:/tmp/persistent/agent_workspace/skills/engineer"
+}
 
 QA_ENGINEER_SKILL_PATH = {
     "linux": "/tmp/persistent/agent_workspace/skills/QA_engineer",
-    "windows": "C:/tmp/persistent/agent_workspace/skills/QA_engineer"}
+    "windows": "C:/tmp/persistent/agent_workspace/skills/QA_engineer"
+}
+
+PLANNER_SKILL_PATH = {
+    "linux": "/tmp/persistent/agent_workspace/skills/planner",
+    "windows": "C:/tmp/persistent/agent_workspace/skills/planner"
+}
+
+BUILDER_SKILL_PATH = {
+    "linux": "/tmp/persistent/agent_workspace/skills/builder",
+    "windows": "C:/tmp/persistent/agent_workspace/skills/builder"
+}
+
+EVALUATOR_SKILL_PATH = {
+    "linux": "/tmp/persistent/agent_workspace/skills/evaluator",
+    "windows": "C:/tmp/persistent/agent_workspace/skills/evaluator"
+}
 
 MY_FILESYSTEM_MIDDLEWARE_SYSTEM_PROMPT = """## 遵循规范
 
@@ -120,3 +137,51 @@ PRESERVED_HIDDEN_FILES = {'.env', '.gitignore', '.dockerignore'}
 
 AGENTBAY_IMAGE_ID = "imgc-0a8urjag1l02wa4og"
 AGENTBAY_MCP_SERVER_NAME = "sandbox"
+
+SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = """
+## 团队工作环境 
+1. 已知每次团队进行软件开发任务的环境，是一个具备图形化界面的计算机沙箱。
+2. 该沙盒ID是sandbox id="{sandbox_id}"，所以当调用那些需要传入sandbox id的工具的时候，**可以并且只能**使用该sandbox id。
+3. 本次软件开发任务仅允许基于当前这个已有沙箱（sandbox id="{sandbox_id}"），**禁止**调用 create_sandbox 新建任何其他sandbox。
+
+## 项目工作空间规范
+1. **项目工作空间路径**：对于每个项目，其所有项目文件必须存放在 `/tmp/persistent/agent_workspace/warehouse/{{project_name}}/` 目录下
+   - 项目名通常使用蛇形命名法（snake_case），例如：`tank_battle_game`、`flappy_bird`
+   - 完整示例：`/tmp/persistent/agent_workspace/warehouse/tank_battle_game/`
+
+2. **标准目录结构**：
+/tmp/persistent/agent_workspace/warehouse/{{project_name}}/
+├── docs/              # 存放所有文档
+├── src/               # 源代码目录（根据技术栈可能不同）
+├── tests/             # 测试代码目录
+├── TASKS.md           # 功能点待办列表
+└── README.md          # 项目说明文档
+
+3. **文件操作原则**：
+   - 读取文件时使用绝对路径或相对于 `/tmp/persistent/agent_workspace/{{project_name}}` 的路径
+   - 项目工作空间一般会被自动创建，禁止自行创建项目工作空间。
+   - 所有团队成员共享同一项目工作空间，注意文件命名避免冲突
+
+4. **TASKS.md 格式规范**（Planner/Builder/Evaluator专用）：
+   ```markdown
+   # 任务列表
+   
+   - [ ] Task-01: 实现游戏主窗口和基本框架
+   - [ ] Task-02: 实现玩家坦克移动控制
+   - [x] Task-03: 实现子弹发射机制（已完成）
+   ```
+   - 使用 `- [ ]` 表示未完成，`- [x]` 表示已完成
+   - 每个任务应有清晰的编号和描述
+
+## 工具使用原则
+1. 绝不调用那些会返回无法解读信息的工具，尤其是snapshot、screenshot这类返回base64编码字符串的截图工具，避免摄入大量无用信息
+2. 若想调用的某个工具返回效果不理想，你可以自己编写python脚本并且通过`execute`工具执行
+
+## 异常情况处理
+1. 若`/tmp/persistent/agent_workspace/`下不存在项目工作空间，属于异常情况，应该主动汇报"REQUEST_REJECTED：项目工作空间不存在，拒绝继续执行"
+"""
+
+# 自动开发的配置
+TASK_DONE_IDENTIFIER = "TASK_DONE"
+TASK_REJECTED_IDENTIFIER = "REQUEST_REJECTED"
+MAX_REACT_LOOP_COUNT = 5  # dev_team最多运行5次

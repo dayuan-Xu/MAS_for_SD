@@ -65,9 +65,9 @@ class ContextBoxManager:
         logger.info("✅ ContextBoxManager 初始化完成")
 
     def list_all_contexts(
-        self, 
-        max_results: int = 100,
-        session_id: Optional[str] = None
+            self,
+            max_results: int = 100,
+            session_id: Optional[str] = None
     ) -> List[Context]:
         """列出当前 API Key 下的所有 Context Box。
         
@@ -87,10 +87,10 @@ class ContextBoxManager:
             ```
         """
         logger.info(f"📋 正在获取 Context Box 列表 (max_results={max_results})...")
-        
+
         all_contexts: List[Context] = []
         next_token: Optional[str] = None
-        
+
         try:
             while True:
                 params = ContextListParams(
@@ -98,30 +98,30 @@ class ContextBoxManager:
                     next_token=next_token,
                     session_id=session_id
                 )
-                
+
                 result: ContextListResult = self._context_service.list(params)
-                
+
                 if not result.success:
                     logger.error(f"❌ 获取 Context 列表失败: {result.error_message}")
                     return all_contexts
-                
+
                 if result.contexts:
                     all_contexts.extend(result.contexts)
                     logger.debug(f"   已获取 {len(result.contexts)} 个 Context")
-                
+
                 # 检查是否有更多页面
                 if not result.next_token:
                     break
-                    
+
                 next_token = result.next_token
-                
+
                 # 如果已经获取了足够多的结果，提前退出
                 if len(all_contexts) >= max_results:
                     break
-            
+
             logger.info(f"✅ 共获取 {len(all_contexts)} 个 Context Box")
             return all_contexts
-            
+
         except Exception as e:
             logger.error(f"❌ 获取 Context 列表异常: {e}")
             import traceback
@@ -146,18 +146,18 @@ class ContextBoxManager:
             ```
         """
         logger.info(f"🔍 正在获取 Context (ID: {context_id})...")
-        
+
         try:
             # 使用 get 方法通过 context_id 获取
             result = self._context_service.get(context_id=context_id)
-            
+
             if result.success and result.context:
                 logger.info(f"✅ 成功获取 Context: {result.context.name}")
                 return result.context
             else:
                 logger.warning(f"⚠️ 未找到 Context (ID: {context_id}): {result.error_message}")
                 return None
-                
+
         except Exception as e:
             logger.error(f"❌ 获取 Context 异常: {e}")
             import traceback
@@ -174,17 +174,17 @@ class ContextBoxManager:
             Optional[Context]: Context 对象，如果不存在则返回 None
         """
         logger.info(f"🔍 正在获取 Context (Name: {name})...")
-        
+
         try:
             result = self._context_service.get(name=name)
-            
+
             if result.success and result.context:
                 logger.info(f"✅ 成功获取 Context: {result.context.name} (ID: {result.context.id})")
                 return result.context
             else:
                 logger.warning(f"⚠️ 未找到 Context (Name: {name}): {result.error_message}")
                 return None
-                
+
         except Exception as e:
             logger.error(f"❌ 获取 Context 异常: {e}")
             import traceback
@@ -192,10 +192,10 @@ class ContextBoxManager:
             return None
 
     def list_context_files(
-        self,
-        context_id: str,
-        parent_folder_path: str = "/",
-        page_size: int = 50
+            self,
+            context_id: str,
+            parent_folder_path: str = "/",
+            page_size: int = 50
     ) -> List[ContextFileEntry]:
         """列出 Context Box 中指定目录下的文件和子目录。
         
@@ -217,10 +217,10 @@ class ContextBoxManager:
             ```
         """
         logger.info(f"📂 正在列出 Context 文件 (ID: {context_id}, Path: {parent_folder_path})...")
-        
+
         all_files: List[ContextFileEntry] = []
         page_number = 1
-        
+
         try:
             while True:
                 result = self._context_service.list_files(
@@ -229,25 +229,25 @@ class ContextBoxManager:
                     page_number=page_number,
                     page_size=page_size
                 )
-                
+
                 if not result.success:
                     logger.error(f"❌ 获取文件列表失败")
                     return all_files
-                
+
                 if result.entries:
                     all_files.extend(result.entries)
                     logger.debug(f"   第 {page_number} 页: {len(result.entries)} 个文件/目录")
-                
+
                 # 检查是否还有更多页面
                 total_count = result.count or 0
                 if len(all_files) >= total_count:
                     break
-                    
+
                 page_number += 1
-            
+
             logger.info(f"✅ 共获取 {len(all_files)} 个文件/目录条目")
             return all_files
-            
+
         except Exception as e:
             logger.error(f"❌ 获取文件列表异常: {e}")
             import traceback
@@ -255,11 +255,11 @@ class ContextBoxManager:
             return all_files
 
     def download_all_files(
-        self,
-        context_id: str,
-        remote_root_path: str = "/",
-        local_download_dir: Path = None,
-        overwrite: bool = False
+            self,
+            context_id: str,
+            remote_root_path: str = "/",
+            local_download_dir: Path = None,
+            overwrite: bool = False
     ) -> int:
         """下载 Context Box 中的所有文件到本地目录。
         
@@ -288,18 +288,18 @@ class ContextBoxManager:
         """
         if local_download_dir is None:
             local_download_dir = Path.cwd() / "context_downloads" / context_id
-        
+
         logger.info(f"📥 开始下载 Context 文件 (ID: {context_id})")
         logger.info(f"   远程路径: {remote_root_path}")
         logger.info(f"   本地目录: {local_download_dir}")
-        
+
         # 确保本地目录存在
         local_download_dir.mkdir(parents=True, exist_ok=True)
-        
+
         downloaded_count = 0
         skipped_count = 0
         failed_count = 0
-        
+
         try:
             # 递归下载文件
             downloaded_count = self._download_recursive(
@@ -311,13 +311,13 @@ class ContextBoxManager:
                 skipped_count_ref=[skipped_count],
                 failed_count_ref=[failed_count]
             )
-            
+
             logger.info(
                 f"✅ 下载完成: 成功 {downloaded_count} 个, "
                 f"跳过 {skipped_count} 个, 失败 {failed_count} 个"
             )
             return downloaded_count
-            
+
         except Exception as e:
             logger.error(f"❌ 下载过程异常: {e}")
             import traceback
@@ -325,14 +325,14 @@ class ContextBoxManager:
             return downloaded_count
 
     def _download_recursive(
-        self,
-        context_id: str,
-        remote_path: str,
-        local_base_dir: Path,
-        remote_base_path: str,
-        overwrite: bool,
-        skipped_count_ref: list,
-        failed_count_ref: list
+            self,
+            context_id: str,
+            remote_path: str,
+            local_base_dir: Path,
+            remote_base_path: str,
+            overwrite: bool,
+            skipped_count_ref: list,
+            failed_count_ref: list
     ) -> int:
         """递归下载目录中的文件。
         
@@ -349,22 +349,22 @@ class ContextBoxManager:
             int: 成功下载的文件数量
         """
         downloaded_count = 0
-        
+
         try:
             # 列出当前目录下的所有文件和子目录
             files = self.list_context_files(context_id, remote_path, page_size=100)
-            
+
             for file_entry in files:
                 # 计算相对路径
                 relative_path = Path(file_entry.file_path).relative_to(remote_base_path)
                 local_path = local_base_dir / relative_path
-                
+
                 # 判断是文件还是目录
                 if file_entry.file_type == "folder":
                     # 创建本地目录
                     local_path.mkdir(parents=True, exist_ok=True)
                     logger.debug(f"   📁 创建目录: {local_path}")
-                    
+
                     # 递归下载子目录
                     downloaded_count += self._download_recursive(
                         context_id=context_id,
@@ -381,30 +381,30 @@ class ContextBoxManager:
                         logger.debug(f"   ⏭️  跳过已存在文件: {local_path}")
                         skipped_count_ref[0] += 1
                         continue
-                    
+
                     success = self._download_single_file(
                         context_id=context_id,
                         remote_file_path=file_entry.file_path,
                         local_file_path=local_path
                     )
-                    
+
                     if success:
                         downloaded_count += 1
                         logger.debug(f"   ✅ 已下载: {file_entry.file_path} -> {local_path}")
                     else:
                         failed_count_ref[0] += 1
                         logger.warning(f"   ❌ 下载失败: {file_entry.file_path}")
-        
+
         except Exception as e:
             logger.error(f"❌ 递归下载出错 (路径: {remote_path}): {e}")
-        
+
         return downloaded_count
 
     def _download_single_file(
-        self,
-        context_id: str,
-        remote_file_path: str,
-        local_file_path: Path
+            self,
+            context_id: str,
+            remote_file_path: str,
+            local_file_path: Path
     ) -> bool:
         """下载单个文件。
         
@@ -417,43 +417,43 @@ class ContextBoxManager:
             bool: 是否下载成功
         """
         temp_file_path = None
-        
+
         try:
             # 确保父目录存在
             local_file_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # 获取预签名下载 URL
             url_result = self._context_service.get_file_download_url(
                 context_id=context_id,
                 file_path=remote_file_path
             )
-            
+
             if not url_result.success or not url_result.url:
                 logger.error(f"   获取下载 URL 失败: {url_result.error_message}")
                 return False
-            
+
             # 使用临时文件下载
             import requests
-            
+
             with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.tmp') as temp_file:
                 temp_file_path = temp_file.name
-                
+
                 # 下载文件
                 response = requests.get(url_result.url, timeout=60)
                 response.raise_for_status()
-                
+
                 temp_file.write(response.content)
-            
+
             # 移动到目标位置
             import shutil
             shutil.move(temp_file_path, str(local_file_path))
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"   下载文件异常: {e}")
             return False
-            
+
         finally:
             # 清理临时文件
             if temp_file_path and os.path.exists(temp_file_path):
@@ -479,14 +479,14 @@ class ContextBoxManager:
         context = self.get_context_by_id(context_id)
         if not context:
             return None
-        
+
         info = {
             "id": context.id,
             "name": context.name,
             "created_at": context.created_at,
             "last_used_at": context.last_used_at,
         }
-        
+
         # 尝试获取文件数量（通过列出根目录）
         try:
             files = self.list_context_files(context_id, "/", page_size=1)
@@ -494,7 +494,7 @@ class ContextBoxManager:
             info["has_files"] = len(files) > 0
         except Exception:
             info["has_files"] = False
-        
+
         return info
 
     def __repr__(self) -> str:
@@ -504,17 +504,18 @@ class ContextBoxManager:
 if __name__ == "__main__":
     # 测试代码
     from src.config.config_logging import setup_logging
+
     setup_logging()
-    
+
     logger.info("=" * 60)
     logger.info("ContextBoxManager 测试")
     logger.info("=" * 60)
-    
+
     # 创建管理器
     manager = ContextBoxManager()
-    
+
     # 1. 列出所有 Context
-    logger.info("\n--- 测试 1: 列出所有 Context Box ---")
+    logger.info("\n--- 测试 1: 列出所有 Context Box ---\n\n")
     contexts = manager.list_all_contexts(max_results=10)
     logger.info(f"找到 {len(contexts)} 个 Context Box:")
     for i, ctx in enumerate(contexts, 1):
@@ -523,31 +524,31 @@ if __name__ == "__main__":
         logger.info(f"     Created: {ctx.created_at}")
         logger.info(f"     Last Used: {ctx.last_used_at}")
         logger.info("")
-    
+
     # 2. 如果有 Context，测试获取和浏览
     if contexts:
-        test_context = contexts[0]
-        logger.info(f"--- 测试 2: 获取 Context (ID: {test_context.id}) ---")
+        test_context = contexts[0]  # 获取第一个 Context
+        logger.info(f"\n--- 测试 2: 通过Context ID = {test_context.id})获取Context: ---\n\n")
         context = manager.get_context_by_id(test_context.id)
         if context:
             logger.info(f"  Context Name: {context.name}")
             logger.info(f"  Context ID: {context.id}")
-            
+
             # 3. 列出文件
-            logger.info(f"\n--- 测试 3: 列出 Context 文件 ---")
+            logger.info(f"\n--- 测试 3: 列出 Context 文件 ---\n\n")
             files = manager.list_context_files(context.id, "/", page_size=20)
             logger.info(f"根目录下有 {len(files)} 个文件/目录:")
             for file_entry in files[:10]:  # 只显示前 10 个
                 logger.info(f"  - {file_entry.file_path} "
-                          f"(type: {file_entry.file_type}, size: {file_entry.size})")
-            
+                            f"(type: {file_entry.file_type}, size: {file_entry.size})")
+
             # 4. 下载文件（可选，取消注释以测试）
             # logger.info(f"\n--- 测试 4: 下载所有文件 ---")
             # from pathlib import Path
             # local_dir = Path("./test_context_download")
             # count = manager.download_all_files(context.id, "/", local_dir, overwrite=True)
             # logger.info(f"下载了 {count} 个文件到 {local_dir}")
-    
-    logger.info("\n" + "=" * 60)
+
+    logger.info("=" * 60)
     logger.info("测试完成")
     logger.info("=" * 60)

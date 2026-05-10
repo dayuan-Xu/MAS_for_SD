@@ -128,7 +128,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
                             break
 
                 # 记录单个工具的详细信息
-                self.logger.info(f"\n--- 工具 {idx}/{len(tool_messages)} ---")
+                self.logger.info(f"\n--- ToolMessage: {idx}/{len(tool_messages)} ---")
                 self.logger.info(f"工具名称: {tool_name}")
                 self.logger.info(f"工具入参: {tool_args}")
                 self.logger.info(f"执行结果:\n{tool_result}")
@@ -176,7 +176,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
 
             # 记录 AI 文本内容
             if last_msg.content:
-                self.logger.info(f"AI 回复内容:\n{last_msg.content}")
+                self.logger.info(f"AIMessage Content:\n{last_msg.content}")
 
             # 记录工具调用请求（如果有）
             if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
@@ -186,7 +186,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
                     tool_args = tool_call.get('args', {})
                     tool_id = tool_call.get('id', 'N/A')
 
-                    self.logger.info(f"\n--- 工具调用 {idx}/{len(last_msg.tool_calls)} ---")
+                    self.logger.info(f"\n--- AIMessage Tool Calls: {idx}/{len(last_msg.tool_calls)} ---")
                     self.logger.info(f"工具名称: {tool_name}")
                     self.logger.info(f"调用ID: {tool_id}")
                     self.logger.info(f"调用参数: {tool_args}")

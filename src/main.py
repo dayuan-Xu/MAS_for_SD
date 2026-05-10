@@ -4,7 +4,7 @@ import uuid
 from langchain_core.runnables import RunnableConfig
 
 from src.config.config_logging import experiment_logger, setup_experiment_logging, setup_logging
-from src.dev_team.auto_dev import async_automatic_dev
+from src.dev_team.auto_dev import auto_dev
 from src.dev_team.my_backend import LinuxSandboxBackend
 from src.dev_team.team import AgentTeam
 from src.paths import SOFTWARE_DEV_7_PATH
@@ -23,7 +23,7 @@ async def talk_with_agent_team(task_name="Agent test"):
     with LinuxSandboxBackend(task_name=task_name) as sandbox:
         # ✅ 使用异步工厂方法创建带 MCP 工具的 dev_team V2 实例
 
-        dev_team = await AgentTeam.create_with_agentbay_mcp_tools(sandbox)
+        dev_team = await AgentTeam.create_with_agentbay_mcp(sandbox)
 
         print(f"\n✅ 开发团队初始化完成， MCP 工具数量: {len(dev_team.mcp_tools)}")
 
@@ -67,10 +67,10 @@ async def experiment():
     task_results = []
     total_start_time = time.time()
 
-    for task in tasks:
+    for task in reversed(tasks):
         # 询问是否继续下一个任务
         instruction = input(
-            f"\n是否继续进行下一个任务{task.name}，还是跳过，还是直接退出（y-'yes and start'，s-'skip and proceed'，n-'no and exit'）：")
+            f"\n是否继续进行下一个任务:{task.name}，还是跳过，还是直接退出（y-'yes and start'，s-'skip and proceed'，n-'no and exit'）：")
         if instruction.lower() == 'n':
             break
         elif instruction.lower() == 's':
@@ -78,8 +78,8 @@ async def experiment():
         elif instruction.lower() == 'y':
             experiment_logger.info(f"🚀 开始进行任务{task.name}")
 
-            # ⭐ 异步运行软件开发任务（严格串行，等待上一个任务完全结束）
-            result = await async_automatic_dev(task)
+            # 异步运行软件开发任务（严格串行，等待上一个任务完全结束）
+            result = await auto_dev(task, enable_brown=False)  # 强制绿地开发
 
             task_results.append(result)
 
@@ -111,11 +111,34 @@ async def experiment():
             experiment_logger.info(f"\n❌ 运行失败: {result['task_name']}")
             if 'error' in result:
                 experiment_logger.info(f"   ❌ 错误信息: {result['error']}")
+    experiment_logger.info(f"📝 实验统计日志文件: {log_file}")
 
 
 if __name__ == "__main__":
     import asyncio
+    import sys
+
+    # Windows 平台需要切换到 SelectorEventLoop 以支持 psycopg 异步操作
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     # 运行任务
-    asyncio.run(talk_with_agent_team())
-    # asyncio.run(experiment())
+    # asyncio.run(talk_with_agent_team())
+    asyncio.run(experiment())
+
+"""
+1. 6人智能体开发团队太复杂，协作动态难以分析。
+3人或者说两人智能体的紧密协作才好分析一些！
+实验项目最好由易到难，比如streamlit的两个实验再到四个难的游戏：
+贪吃蛇、打砖块、像素鸟、坦克大战。
+自己的方法先追求软件可用数超过基线，再追求全部可用！
+
+2. 必须启用postgres checkpointer，这样后续可以基于某个智能体的执行历史与其对话，获知他对工具的理解，并最大限度地剔除不必要工具！
+工具越少越好！目前web模态应用ui交互操作验证工具最成熟，完全可以剔除已安装应用启动杀死工具、桌面窗口控制工具？总之工具越少越好！
+
+工具使用技能不断由智能体探索完善，让智能体探索发现哪个场景是使用某工具的最佳或合适的时机！并将之最有用的工具写入技能文件！
+
+
+3. 注入人格性格特征，让builder敢于尝试和与evaluator协作询问。验收标准本质上是一种规格说明。可用阶段tasks列表->吸引力阶段tasks列表？
+为工程师注入python全全开发技能，重点关注包安装技能，不要只会从官方源下载
+"""

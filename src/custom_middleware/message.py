@@ -1,18 +1,18 @@
-# EnhancedAssignMiddleware - 增强版任务委派中间件
+# CommunicateMiddleware - 增强版任务委派中间件
 # 
 # 核心特性：
 # 1. 专家智能体编译时传入 checkpointer，实现独立的状态持久化
-# 2. 通过 EnhancedAssignMiddleware UserAgent state中的expert_thread_ids 字典（每个thread_id可视为文件名）管理每个专家的 thread_id，
+# 2. 通过 CommunicateMiddleware UserAgent state中的expert_thread_ids 字典（每个thread_id可视为文件名）管理每个专家的 thread_id，
 # 同时结合checkpoint_ns（可视为文件夹）完成专家图状态的正确访问
-# 3. assign 工具调用时自动检测并生成 thread_id（懒加载策略）
+# 3. communicate 工具调用时自动检测并生成 thread_id（懒加载策略）
 # 4. 专家状态与 Leader 状态完全解耦
-# 5. 目前只有Leader Agent使用了EnhancedAssignMiddleware
+# 5. 目前只有Leader Agent使用了EnhancedCommunicateMiddleware
 #
 # 缺陷：
 # 1. 被调用的专家智能体的短期记忆，即thread id依旧完全依附于主调智能体状态中的expert_thread_ids 字典
-#    这样的话，一个智能体在同一个软件开发任务中的短期记忆，无法被多个不同的智能体提供assign注入，并且不同智能体发消息必须是同步调用收消息的智能体。
-# 2. 缺陷产生原因：EnhancedAssignMiddleware 或者说 想发消息的智能体 ，它们直接拥有智能体对象而不是智能体的InBox
-#   同时团队中每个智能体的运行是由assign工具出发的
+#    这样的话，一个智能体在同一个软件开发任务中的短期记忆，无法被多个不同的智能体提供communicate注入，并且不同智能体发消息必须是同步调用收消息的智能体。
+# 2. 缺陷产生原因：CommunicateMiddleware 或者说 想发消息的智能体 ，它们直接拥有智能体对象而不是智能体的InBox
+#   同时团队中每个智能体的运行是由communicate工具出发的
 # 3. 缺陷解决办法：
 # 每个智能体都拥有一个 CollaborateMiddleware，该中间件为智能体提供一个 Tasks/Attentions 列表、一个 send_message  工具
 # sender message只会为目标智能体创建一个关注点，并不会立即触发该智能体的运行
@@ -82,7 +82,7 @@ def create_compiled_expert_agent(agent, description: str):
 
 
 class _ExpertAgentSpec(TypedDict):
-    """Internal spec for building the assign tool."""
+    """Internal spec for building the communicate tool."""
 
     name: str
     description: str
@@ -92,9 +92,9 @@ class _ExpertAgentSpec(TypedDict):
 def merge_expert_thread_ids(left: dict | None, right: dict | None) -> dict:
     """合并两个并行的 expert_thread_ids 更新。
 
-    用于处理并行 assign 调用时的状态更新冲突。
+    用于处理并行 communicate 调用时的状态更新冲突。
     
-    ⭐ 关键：LangGraph 的 reducer 函数必须能够处理 None 值
+    LangGraph 的 reducer 函数必须能够处理 None 值
 
     Args:
         left: 第一个字典（可能是 None）
@@ -116,67 +116,60 @@ def merge_expert_thread_ids(left: dict | None, right: dict | None) -> dict:
     return merged
 
 
-class EnhancedAssignState(AgentState):
-    """EnhancedAssignMiddleware 的状态 Schema。
+class CommunicateState(AgentState):
+    """CommunicateMiddleware 的状态 Schema。
     
     包含一个 expert_thread_ids 字典，用于存储每个专家的 thread_id。
-    这样可以在多次 assign 调用之间保持对专家 thread_id 的追踪，
+    这样可以在多次 Communicate 调用之间保持对专家 thread_id 的追踪，
     而专家的完整图状态由专家自己的 checkpointer 根据 thread_id 自主管理。
     """
     expert_thread_ids: NotRequired[Annotated[dict[str, str], merge_expert_thread_ids]]
     """每个专家的 thread_id 字典。键为专家名称，值为 thread_id。使用自定义 reducer 支持并行更新。"""
 
 
-ASSIGN_TOOL_DESCRIPTION = """Assign a task to a specific expert agent in the development team.
-
-This tool allows you to assign specific development tasks to specialized team members.
-The expert agent will execute the task and report the results.
-Besides, you can also just use it as a communication tool between you and the other.
+MESSAGE_TOOL_DESCRIPTION = """Communicate with a specific expert agent in the development team by sending a message.
+The expert agent will do some work and respond to you.
+You can also use it as a tool to assign specific tasks to specialized team members.
 
 Available experts:
 {available_experts}
 
 Usage notes:
-1. Be clear and specific about what you want the expert to accomplish. 
-2. All expert agents maintain their own persistent state across multiple assignments via their dedicated thread_id.
-3. Use this tool to leverage the specialized skills of each team member.
-4. 目前不支持针对同一专家智能体并行调用assign，即你不能同时多次assign同一个专家智能体，但是你具备同时assign不同专家智能体的能力。"""  # noqa: E501
+1. Be clear and specific about what you want the expert to accomplish if you are assigning a task. 
+2. All expert agents maintain their own memory across multiple communications between you and him/her.
+3. Use this tool to leverage the specialized capabiliies of each team member.
+4. 目前不支持针对同一专家智能体并行调用该工具，即你不能同时多次给同一个专家智能体发消息，但是你具备同时给不同专家智能体发消息的能力。"""  # noqa: E501
 
-ASSIGN_SYSTEM_PROMPT = """## `assign` (team collaboration tool)
+COMMUNICATE_SYSTEM_PROMPT = """## `send_message` (team collaboration tool)
 
-You have access to an `assign` tool to assign tasks to specialized expert agents in your development team.
+You have access to an `send_message` tool to communicate with specialized expert agents in your development team.
 
-When to use the assign tool:
-- When a task requires specialized expertise (coding, testing, product management, etc.)
-- When you need to assign a specific development (stage) task to a team member
+When to use this tool:
 - When you want to discuss or debate with one of your team members, use it as a communication tool
+- When you need to assign a specific task to a team member because this task requires his/her specialized expertise (coding, testing, product management, etc.)
 
 How to use:
-1. Specify the task clearly in the `private_message` parameter
-2. Choose the appropriate expert by their `expert_name`
-
-Remember: Each expert agent maintains its own persistent state across multiple assignments, allowing them to build on previous work."""  # noqa: E501
+1. Specify the message clearly in the `private_message` parameter
+2. Choose the appropriate expert by their `expert_name`"""  # noqa: E501
 
 
-class AssignToolSchema(BaseModel):
+class CommunicateToolSchema(BaseModel):
     """Assign工具的输入参数Schema，简化为专家名称和消息。"""
     expert_name: str = Field(
-        description="The name of the expert agent to assign the task to (e.g., 'David', 'Eva', 'Alice')."
+        description="The name of the expert agent to send the message to."
     )
 
     private_message: str = Field(
-        description=("A message containing the concise task description that will be sent to the expert agent."
-                     "如果是指派专家智能体产出文档交付物，不必明确指明文档的内容应该包含哪些章节，相信你的团队成员的老道经验！")
+        description="A message containing the information that will be sent to the expert agent."
     )
 
 
-def _build_assign_tool(*,
-                       user_name: str = "Tim Leader",
-                       experts: list[_ExpertAgentSpec],
-                       ) -> StructuredTool:
+def _build_send_message_tool(*,
+                             user_name: str = "Tim Leader",
+                             experts: list[_ExpertAgentSpec],
+                             ) -> StructuredTool:
     """构建assign工具，支持向专家团队委派任务。
     
-    ⭐ 关键改进：
     - 不再维护专家完整状态，只维护 thread_id 映射
     - 调用专家时传入其专属的 thread_id，让专家自主持久化状态
     
@@ -198,7 +191,7 @@ def _build_assign_tool(*,
     expert_description_str = "\n".join(f"- {s['name']}: {s['description']}" for s in experts)
 
     # 格式化描述文本
-    description = ASSIGN_TOOL_DESCRIPTION.format(available_experts=expert_description_str)
+    description = MESSAGE_TOOL_DESCRIPTION.format(available_experts=expert_description_str)
 
     def _return_command_with_state_update(expert_name: str, expert_thread_id: str, runtime: ToolRuntime,
                                           expert_result: dict) -> Command:
@@ -261,7 +254,7 @@ def _build_assign_tool(*,
 
         return expert, expert_input, expert_thread_id
 
-    def assign(
+    def send_message(
             private_message: str,
             expert_name: str,
             runtime: ToolRuntime,
@@ -330,7 +323,7 @@ def _build_assign_tool(*,
             # ⭐ 释放锁
             lock.release()
 
-    async def aassign(
+    async def asend_message(
             private_message: str,
             expert_name: str,
             runtime: ToolRuntime,
@@ -400,19 +393,19 @@ def _build_assign_tool(*,
             lock.release()
 
     return StructuredTool.from_function(
-        name="assign",
-        func=assign,
-        coroutine=aassign,
+        name="send_message",
+        func=send_message,
+        coroutine=asend_message,
         description=description,
         infer_schema=False,
-        args_schema=AssignToolSchema,
+        args_schema=CommunicateToolSchema,
     )
 
 
-class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, ResponseT]):
+class CommunicateMiddleware(AgentMiddleware[CommunicateState, ContextT, ResponseT]):
     """增强版任务委派中间件，提供assign工具用于向专家团队委派任务。
     
-    与标准 AssignMiddleware 的核心区别：
+    与标准 CommunicateMiddleware 的核心区别：
     1. 专家智能体编译时传入 checkpointer，实现独立的状态持久化
     2. 只维护 expert_thread_ids 映射，不维护专家完整状态
     3. 调用专家时传入其专属的 thread_id，让专家自主管理状态
@@ -420,13 +413,13 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
     
     Example:
         ```python
-        from src.custom_middleware.enhanced_assign import EnhancedAssignMiddleware
+        from src.custom_middleware.enhanced_assign import CommunicateMiddleware
         from src.dev_team.team_experts import team_experts
         
         leader = create_agent(
             model=llm,
             middleware=[
-                EnhancedAssignMiddleware(
+                CommunicateMiddleware(
                     backend=my_backend,
                     experts=team_experts,
                 ),
@@ -436,14 +429,14 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
         ```
     """
 
-    state_schema = EnhancedAssignState  # ⭐ 声明新的状态 Schema
+    state_schema = CommunicateState  # ⭐ 声明新的状态 Schema
 
     def __init__(
             self,
             *,
             user_name: str = "Tim Leader",
             experts: Sequence[CompiledExpertAgent] | None = None,
-            system_prompt: str | None = ASSIGN_SYSTEM_PROMPT,
+            system_prompt: str | None = COMMUNICATE_SYSTEM_PROMPT,
             **kwargs: Any,
     ) -> None:
         """初始化EnhancedAssignMiddleware。
@@ -458,7 +451,7 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
 
         # 如果没有提供专家列表，使用默认的team_experts
         if experts is None:
-            raise ValueError("Please provide a list of experts for EnhancedAssignMiddleware Instance")
+            raise ValueError("Please provide a list of experts for CommunicateMiddleware Instance")
 
         # 将CompiledExpertAgent转换为内部规格格式
         expert_specs: list[_ExpertAgentSpec] = []
@@ -473,10 +466,10 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
         self.user_name = user_name
 
         # 构建assign工具
-        assign_tool = _build_assign_tool(user_name=self.user_name, experts=expert_specs)
+        assign_tool = _build_send_message_tool(user_name=self.user_name, experts=expert_specs)
 
         self.logger.info(
-            f"为用户 {self.user_name} 创建的团队协作中间件 EnhancedAssignMiddleware 初始化完成，已注册了 {len(expert_specs)} 个专家")
+            f"为用户 {self.user_name} 创建的团队协作中间件 CommunicateMiddleware 初始化完成，已注册了 {len(expert_specs)} 个专家")
 
         # 构建系统提示词
         if system_prompt and expert_specs:
@@ -488,7 +481,7 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
         # 设置工具列表
         self.tools = [assign_tool]
 
-    def before_agent(self, state: EnhancedAssignState, runtime) -> dict | None:
+    def before_agent(self, state: CommunicateState, runtime) -> dict | None:
         """在 Agent 执行前初始化 expert_thread_ids（如果不存在）。
         
         参考 SkillsMiddleware 的实现，在 before_agent 钩子中初始化新的 state key。
@@ -500,7 +493,7 @@ class EnhancedAssignMiddleware(AgentMiddleware[EnhancedAssignState, ContextT, Re
         # 初始化为空字典
         return {"expert_thread_ids": {}}
 
-    async def abefore_agent(self, state: EnhancedAssignState, runtime) -> dict | None:
+    async def abefore_agent(self, state: CommunicateState, runtime) -> dict | None:
         """异步版本的 before_agent。"""
         return self.before_agent(state, runtime)
 

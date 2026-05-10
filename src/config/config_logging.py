@@ -10,7 +10,7 @@ import datetime
 import logging
 from logging.handlers import RotatingFileHandler
 
-from src.paths import LOG_PATH, LOCAL_WAREHOUSE_FOR_TASK_RESULT
+from src.paths import LOG_PATH, LOCAL_WAREHOUSE_PATH
 
 # ⭐ 创建实验统计专用日志器
 experiment_logger = logging.getLogger("experiment_statistics")
@@ -23,7 +23,8 @@ def setup_experiment_logging():
     LOG_PATH.mkdir(parents=True, exist_ok=True)
 
     # 生成日志文件名（包含时间戳和实验类型）
-    timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
+    # timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
+    timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
     log_filename = f"experiment_{timestamp}.log"
     log_file_path = LOG_PATH / log_filename
 
@@ -68,11 +69,12 @@ def setup_logging(
 
     # 根据是否提供task_name决定日志路径
     if task_name:
-        timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
+        # timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
+        timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
         if task_name == "Agent test":
             task_log_dir = LOG_PATH / "Agent test" / f"logs_{timestamp}"
         else:
-            task_log_dir = LOCAL_WAREHOUSE_FOR_TASK_RESULT / task_name / f"logs_{timestamp}"
+            task_log_dir = LOCAL_WAREHOUSE_PATH / task_name / f"logs_{timestamp}"
 
         # 直接使用固定的日志文件名（路径已包含任务信息）
         app_log_file = "app.log"

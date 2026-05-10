@@ -57,7 +57,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=DOT_ENV_FILE,
         env_file_encoding="utf-8",
-        env_nested_delimiter="__",
         extra="ignore",  # 忽略 .env 文件中存在但当前Settings中未定义的字段
     )
 
