@@ -1,6 +1,6 @@
 ---
 name: software-function-verification
-description: Use this skill for software function verification（especially for UI interaction operations correctness verification）.
+description: Use this skill when you are doing software function verification（especially for UI interaction operations correctness verification）.
 license: MIT
 compatibility: None
 metadata:

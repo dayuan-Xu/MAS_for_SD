@@ -92,7 +92,7 @@ async def multi_react_loop(task: Task,
         while True:
             # 第一次用户输入
             if input_text is None:
-                input_text = (f"针对一个软件需求完成自动化开发。\n"
+                input_text = (f"针对一个软件需求完成开发。\n"
                               f"软件需求描述如下：\n"
                               f"task_name:{task_name}\n"
                               f"task_description:{task_description}\n"
@@ -162,7 +162,7 @@ async def auto_dev(task: Task, enable_brown=False):
         # 创建带 MCP 工具的dev_team实例
         dev_team = await AgentTeam.create_with_agentbay_mcp(sandbox)
         try:
-            # 开启独立开发
+            # 开启多轮react loop
             await multi_react_loop(
                 task,
                 dev_team,

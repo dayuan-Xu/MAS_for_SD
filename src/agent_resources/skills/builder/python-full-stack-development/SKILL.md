@@ -1,12 +1,11 @@
 ---
 name: python-full-stack-development
-description: Use this skill for Python project development including virtual environment setup, package installation with Chinese mirrors, and best practices.
+description: Use this skill when you are working on Python project development.
 license: MIT
 compatibility: None
 metadata:
   author: boss
   version: "1.0"
-allowed-tools: execute, read, write, edit
 ---
 
 # Python 全栈开发技能

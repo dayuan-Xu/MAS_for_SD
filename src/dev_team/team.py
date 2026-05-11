@@ -134,7 +134,10 @@ class AgentTeam:
             system_prompt=MY_FILESYSTEM_MIDDLEWARE_SYSTEM_PROMPT.format(sandbox_type=self.sandbox_type),
             custom_tool_descriptions={
                 "write_file": MY_WRITE_FILE_TOOL_DESCRIPTION
-            })
+            },
+            max_execute_timeout=3600,
+            # Maximum allowed value in seconds for per-command timeout overrides on the execute tool.
+        )
         logger.debug(f"成功创建共享的文件系统中间件，该文件系统中间件基于{self.sandbox_type}镜像")
 
         # 5. 设置技能路径

@@ -240,8 +240,12 @@ class LinuxSandboxBackend(BaseSandbox):
         # 在下载文件前检查会话剩余时间
         self.check_session_remaining_time()
 
+        # 如果智能体调用execute工具时没有传入timeout参数，那么默认timeout是50秒
+        if timeout is None:
+            timeout = 50
+
         # Convert timeout from seconds (protocol) to milliseconds (AgentBay)
-        timeout_ms = int(timeout * 1000) if timeout is not None else None
+        timeout_ms = int(timeout * 1000)
 
         # 为 Python 命令添加 UTF-8 编码环境变量,以便智能体调用read、ls、grep、glob工具时看到正确的文字输出。
         # 检测是否是 Python 命令(已知 BaseSandbox.read/ls/grep/glob 等方法执行时,底层会调用execute方法执行python代码,方式大致为python -c "python代码")
@@ -266,7 +270,7 @@ class LinuxSandboxBackend(BaseSandbox):
                     command = f"set PYTHONUTF8=1 && {command}"
                     logger.debug(f"🔧 已为 Python 命令添加 UTF-8 编码环境变量 (Windows)")
 
-        # agentbay execute工具默认50秒超时
+        # agentbay execute工具默认的超时时间是50秒
         command_result: CommandResult = self._session.command.execute_command(command, timeout_ms=timeout_ms)
 
         output = command_result.output  # shell命令执行后的stdout+stderr
@@ -274,16 +278,31 @@ class LinuxSandboxBackend(BaseSandbox):
 
         if not command_result.success:
             error_msg = command_result.error_message
+            output = error_msg
+            if r'"system_error":"Command timed out"' in error_msg:
+                output = "execute工具执行超时，请设置更大的timeout！"
+
             logger.error(
                 f"❌ session.command.execute_command 执行失败:\n"
-                f"失败的shell命令：\n{command}\n"
-                f"智能体所见的shell工具执行结果：\n{error_msg}\n"
-                f"API返回的错误消息：\n{error_msg}\n")
+                f"失败的shell命令：\n"
+                f"超时时间设置：{timeout} 秒\n"
+                f"{command}\n"
+                f"智能体所见的shell工具执行结果：\n"
+                f"{output}\n"
+                f"API返回的错误消息：\n"
+                f"{error_msg}\n")
             return ExecuteResponse(
-                output=error_msg,
+                output=output,
                 exit_code=exit_code,
                 truncated=False
             )
+
+        logger.debug(f"✅ session.command.execute_command 执行成功\n"
+                     f"执行的命令：\n"
+                     f"{command}\n"
+                     f"超时时间设置：{timeout} 秒\n"
+                     f"命令执行结果：\n"
+                     f"{output}")
 
         return ExecuteResponse(
             output=output,
@@ -783,7 +802,7 @@ class LinuxSandboxBackend(BaseSandbox):
                 f"      session_id={self._session_id},\n"
                 f"      reuse_existing_task_context_box={self.reuse_existing},\n"
                 f"      task_context_box_id={self.task_context_box_id},\n"
-                f"      task_context_box_name={self.task_context_box_name}"
+                f"      task_context_box_name={self.task_context_box_name},\n"
                 f"      sandbox_max_running_time={self._sandbox_max_running_time_str},\n"
                 f"      idle_timeout={self._idle_timeout})")
 
@@ -802,29 +821,35 @@ class LinuxSandboxBackend(BaseSandbox):
         return False  # 不吞掉异常
 
 
-if __name__ == "__main__":
-    # # 1. 使用 with 语句测试沙盒，确保资源自动释放
-    # logger.info("\n--- 开始沙盒功能测试 ---")
-    # with MySandbox("Agent test") as sandbox:
-    #     logger.info(f"Sandbox ID: {sandbox.id}")
-    #
-    #     # 3. 测试命令执行（包含超时逻辑）
-    #     logger.info(sandbox.execute("pwd"))
-    #     logger.info(sandbox.execute("echo 'Test command execution'"))
-    #
-    #     # 4. 测试文件上传（包含二进制兼容逻辑）
-    #     logger.info(sandbox.upload_files([("test.txt", b"Hello, World!")]))
-    #
-    #     # 验证文件是否真的存在
-    #     logger.info(sandbox.execute("cat /home/wuying/test.txt"))
-    #     # 增加这一行来查看文件到底在哪
-    #     logger.info(sandbox.execute("ls -l /home/wuying/test.txt"))
-    #     logger.info(sandbox.execute("cat /home/wuying/test.txt"))
-    # logger.info("--- 测试结束，资源应已自动释放 ---")
+def download_artifacts_manually(task_name_: str):
+    """手动下载task context box到本地"""
+    local_download_dir = f"./warehouse/T{task_name_}"
+    logger.info(f"开始手动下载任务 {task_name_} 的成果物到 {local_download_dir}")
+    with LinuxSandboxBackend(task_name=task_name_) as sandbox_:
+        path = Path(local_download_dir)
+        sandbox_.download_task_artifacts(path)
 
-    # 手动下载task context box到本地
+
+if __name__ == "__main__":
     setup_logging()
-    task_name_ = "CRUD manage_2026_05_10_17_24_17"
-    local_absolute_dir = f"./warehouse/T{task_name_}"
-    with LinuxSandboxBackend(task_name=task_name_) as sandbox:
-        sandbox.download_task_artifacts(Path(local_absolute_dir))
+
+    # 1. 使用 with 语句测试沙盒，确保资源自动释放
+    logger.info("\n--- 开始沙盒后端功能测试 ---")
+    with LinuxSandboxBackend(task_name="Agent test") as sandbox_test:
+        # 测试命令执行（包含超时逻辑）
+        # sandbox_test.execute("pwd")
+        # sandbox_test.execute("echo 'Test command execution' > /home/wuying/test.txt && echo 'command execution success!'")
+        # sandbox_test.execute("ls -l /home/wuying/test.txt")
+        # sandbox_test.execute("cat /home/wuying/test.txt")
+        sandbox_test.execute(
+            "pip3 install streamlit -i https://pypi.tuna.tsinghua.edu.cn/simple --timeout 60 > /home/wuying/install.log 2>&1",
+            timeout=300)
+        sandbox_test.execute("cat /home/wuying/install.log")
+
+        # # 测试文件上传（包含二进制兼容逻辑）
+        # sandbox.upload_files([("test1.txt", b"Hello, World!")])
+
+    logger.info("---沙盒后端测试结束，资源应已自动释放 ---")
+
+    # # 2. 手动下载task context box到本地
+    # download_artifacts_manually("CRUD manage")

@@ -50,12 +50,7 @@ async def talk_with_agent_team(task_name="Agent test"):
 
 
 async def experiment():
-    """
-    异步串行执行软件开发任务实验
-    
-    内部串行调用async_automatic_dev，每个任务使用带MCP工具的DevTeamWithLinuxSandboxAndMCP实例
-    确保严格串行执行：后一个任务必须在上一个完全结束后才能继续
-    """
+    """串行执行软件开发任务实验"""
     # 设置实验日志
     log_file = setup_experiment_logging()
     experiment_logger.info(f"📝 实验统计日志文件: {log_file}")
@@ -143,6 +138,11 @@ if __name__ == "__main__":
 - （伪）代码表示智能体开发团队的工作流程以减少自然语言歧义？
 
 下一步检验：
-- Builder是否正确认识到需要加载软件开发技能、软件功能验证技能？ 以获取创建虚拟环境和安装依赖包、利用浏览器工具感知UI的指导信息
-- 是否存在某部分提示词影响智能体行为：sys prompt、middleware prompt、tool description
+1. Builder是否正确认识到需要加载软件开发技能、软件功能验证技能？ 以获取创建虚拟环境和安装依赖包、利用浏览器工具感知UI的指导信息
+结果：Bob还是没有加载该技能！pip安装依赖包时还是遇到了超时问题！
+优化措施：在规则中要求Bob加载该技能！
+
+2. 是否存在某部分提示词不利影响了智能体行为并存在优化空间：sys prompt、middleware prompt、tool description
+优化措施：
+每个软件功能点的验收标准（提议）完全可以分为两部分：必要实现项与其测试用例
 """
