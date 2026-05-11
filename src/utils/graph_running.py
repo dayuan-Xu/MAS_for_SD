@@ -166,7 +166,7 @@ def multi_turn_conversation(agent: CompiledStateGraph | AgentTeam | AgentTeam,
 
 # 运行给定的LangGraph，支持多轮对话（即每次人类输入引发一次ReAct循环，可以有多次人类对话直至人类输入exit）
 async def async_multi_turn_conversation(
-        agent: CompiledStateGraph | AgentTeam | AgentTeam,
+        agent: CompiledStateGraph | AgentTeam,
         run_config: RunnableConfig,
         sandbox: LinuxSandboxBackend | None = None):
     """
@@ -182,7 +182,6 @@ async def async_multi_turn_conversation(
     if not isinstance(agent, (AgentTeam, AgentTeam)) and not sandbox:
         raise ValueError("若提供了Agent实例（CompiledStateGraph），则务必提供相应的Sandbox实例")
 
-    printed_msg_ids = set()  # 用于记录已经输出过的消息id，避免重复输出
     try:
         while True:
             # 第一次用户输入；或者上个ReAct循环完整结束后，等待用户新输入新命令。
@@ -241,15 +240,13 @@ async def async_multi_turn_conversation(
 
                     # 遍历所有消息，而不是只取最后一条
                     # 这样可以确保不会漏掉任何新产生的消息（特别是并发工具调用后的多个Tool Message）
-                    for msg in messages:
-                        if msg.id not in printed_msg_ids:
-                            # 只打印之前没打印过的新消息
-                            if namespace:
-                                # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（新消息），
-                                # 比如是 'tools:5927c259-58a6-e7bb-c9fe-0c051e90c825'
-                                print("\n" + "=" * 33 + "👇 下面这条消息是子图的新消息\n")
-                            msg.pretty_print()
-                            printed_msg_ids.add(msg.id)
+                    msg = messages[-1]
+                    # 只打印之前没打印过的新消息
+                    if namespace:
+                        # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（新消息），
+                        # 比如是 'tools:5927c259-58a6-e7bb-c9fe-0c051e90c825'
+                        print("\n" + "=" * 33 + "👇 下面这条消息是子图的新消息\n")
+                    msg.pretty_print()
                 # 判断本次ReAct循环是否完整地结束了
                 if human_in_the_loop:
                     # 不是完整地结束

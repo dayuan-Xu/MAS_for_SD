@@ -105,7 +105,7 @@ minimax_m27 = ChatOpenAI(
     max_retries=5,  # 增加到 5 次，配合 RetryMiddleware 使用
     api_key=settings.MINIMAX_API_KEY,
     base_url=settings.MINIMAX_BASE_URL,
-    # extra_body={"reasoning_split": True}  # 设置 reasoning_split=True 将思考内容分离到 reasoning_details 字段
+    extra_body={"reasoning_split": True}  # 设置 reasoning_split=True 将思考内容分离到 reasoning_details 字段
 )
 
 custom_profile = {

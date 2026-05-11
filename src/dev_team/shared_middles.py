@@ -5,7 +5,6 @@ from langchain.agents.middleware import SummarizationMiddleware, TodoListMiddlew
 
 from src.config.llm import LLMs
 from src.config.settings import settings
-from src.custom_middleware.agent_activity_monitor import AgentActivityMonitor
 from src.custom_middleware.my_middleware_prompts import MY_WRITE_TODOS_SYSTEM_PROMPT, MY_WRITE_TODOS_TOOL_DESCRIPTION
 
 # from src.config.config_logging import setup_logging
@@ -107,10 +106,6 @@ logger.debug("共享 模型调用重试中间件 ModelRetryMiddleware (官方 + 
 #     enabled=True
 # )
 logger.debug("共享 模型调用重试中间件 ModelRetryMiddleware (官方) 创建成功")
-
-# 智能体活动（AIMessage、ToolMessage）监控中间件实例（可以共享，不依赖 sandbox）
-agent_activity_monitor = AgentActivityMonitor()
-logger.debug("共享 智能体活动监控中间件 AgentActivityMonitor 初始化完成")
 
 # 官方工具重试中间件实例（可以共享，不依赖 sandbox）
 # 使用默认配置：

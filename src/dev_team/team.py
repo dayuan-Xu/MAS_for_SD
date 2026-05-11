@@ -13,20 +13,22 @@ from deepagents.middleware.subagents import SubAgent
 from langchain.agents import create_agent
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.graph.state import CompiledStateGraph
 
 from src.Tools import get_current_time, internet_search
 from src.config.llm import LLMs
 from src.config.settings import settings
+from src.custom_middleware.agent_activity_monitor import AgentActivityMonitor
 from src.custom_middleware.message import CommunicateMiddleware, create_compiled_expert_agent
 from src.custom_middleware.my_skills import MySkillsMiddleware
 from src.custom_middleware.prompt_inject import SystemPromptInjectMiddleware
 from src.dev_team.my_backend import LinuxSandboxBackend
 from src.dev_team.shared_middles import todo_list_middleware, summarization_middleware, \
-    model_retry_middleware, agent_activity_monitor, tool_retry_middleware
+    model_retry_middleware, tool_retry_middleware
 from src.dev_team.team_config import LEADER_SKILL_PATH, ENGINEER_SKILL_PATH, QA_ENGINEER_SKILL_PATH, \
     MY_COMPOSITE_BACKEND_ROUTES, MY_FILESYSTEM_MIDDLEWARE_SYSTEM_PROMPT, \
     MY_WRITE_FILE_TOOL_DESCRIPTION, AGENTBAY_MCP_SERVER_NAME, BUILDER_SKILL_PATH, EVALUATOR_SKILL_PATH, \
-    SHARED_INFORMATION_AFTER_SYSTEM_PROMPT
+    SHARED_INFORMATION_AFTER_SYSTEM_PROMPT, MY_EXECUTE_TOOL_DESCRIPTION
 from src.paths import PROMPTS_DIR, LOCAL_WAREHOUSE_PATH, \
     REGISTERED_TASKS_PATH
 from src.utils.datasets import Task, TraceableTask
@@ -133,7 +135,8 @@ class AgentTeam:
             backend=self.composite_backend,
             system_prompt=MY_FILESYSTEM_MIDDLEWARE_SYSTEM_PROMPT.format(sandbox_type=self.sandbox_type),
             custom_tool_descriptions={
-                "write_file": MY_WRITE_FILE_TOOL_DESCRIPTION
+                "write_file": MY_WRITE_FILE_TOOL_DESCRIPTION,
+                "execute": MY_EXECUTE_TOOL_DESCRIPTION,
             },
             max_execute_timeout=3600,
             # Maximum allowed value in seconds for per-command timeout overrides on the execute tool.
@@ -291,7 +294,7 @@ class AgentTeam:
         # 可选：添加活动监控
         if config.log_activity:
             logger.info(f"对智能体 {config.name} (身份：{config.role}) 启用智能体活动监控日志")
-            middlewares.insert(0, agent_activity_monitor)
+            middlewares.insert(0, AgentActivityMonitor(agent_name=config.name))
 
         return middlewares
 
@@ -335,8 +338,9 @@ class AgentTeam:
             communicate_middleware=communicate_middleware
         )
 
-        # 7. 生成智能体名称
-        agent_name = f"{config.name}_{config.role.title().replace('_', '')}"
+        # # 7. 生成智能体名称
+        # agent_name = f"{config.name}_{config.role.title().replace('_', '')}"
+        agent_name = config.name
 
         # 8. 创建智能体
         agent = create_agent(
@@ -614,8 +618,10 @@ class AgentTeam:
     def invoke(self, input, config=None, **kwargs):
         """同步调用 leader"""
         if self.team_type == "simple":
-            return self.planner.invoke(input, config, **kwargs)
+            agent: CompiledStateGraph = self.planner
+            return agent.invoke(input, config, **kwargs)
         if self.team_type == "complex":
+            agent: CompiledStateGraph = self.leader
             return self.leader.invoke(input, config, **kwargs)
         raise NotImplementedError(f"不支持的 team_type: {self.team_type}")
 

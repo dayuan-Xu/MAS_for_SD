@@ -93,6 +93,50 @@ Usage:
 - **分段创建长文档**：禁止一次性调用该工具生成长文档，而是应该先调用该工具一次以创建文档骨架（包含文档元数据和所有章节标题），之后再多次调用edit_file tool逐个章节填充内容，每次将章节标题替换为完整章节。 
 - 若不知道当前创建的是否为长文档，就默认使用分段创建方式。"""
 
+MY_EXECUTE_TOOL_DESCRIPTION = """Executes a shell command in the sandbox environment.
+
+Usage:
+Executes a given command in the sandbox environment with proper handling and security measures.
+Before executing the command, please follow these steps:
+1. Directory Verification:
+   - If the command will create new directories or files, first use the ls tool to verify the parent directory exists and is the correct location
+   - For example, before running "mkdir foo/bar", first use ls to check that "foo" exists and is the intended parent directory
+2. Command Execution:
+   - Always quote file paths that contain spaces with double quotes (e.g., cd "path with spaces/file.txt")
+   - Examples of proper quoting:
+     - cd "/Users/name/My Documents" (correct)
+     - cd /Users/name/My Documents (incorrect - will fail)
+     - python "/path/with spaces/script.py" (correct)
+     - python /path/with spaces/script.py (incorrect - will fail)
+   - After ensuring proper quoting, execute the command
+   - Capture the output of the command
+Usage notes:
+  - Commands run in an the sandbox environment
+  - Returns combined stdout/stderr output with exit code
+  - If the output is very large, it may be truncated
+  - For long-running commands, use the timeout parameter to override the default timeout (e.g., execute(command="make build", timeout=300))
+  - The default timeout is 50 seconds.
+  - VERY IMPORTANT: You MUST avoid using search commands like find and grep. Instead use the grep, glob tools to search. You MUST avoid read tools like cat, head, tail, and use read_file to read files.
+  - When issuing multiple commands, use the ';' or '&&' operator to separate them. DO NOT use newlines (newlines are ok in quoted strings)
+    - Use '&&' when commands depend on each other (e.g., "mkdir dir && cd dir")
+    - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail
+  - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of cd
+
+Examples:
+  Good examples:
+    - execute(command="pytest /foo/bar/tests")
+    - execute(command="python /path/to/script.py")
+    - execute(command="npm install && npm test", timeout=300)
+    - execute(command="make build", timeout=300)
+
+  Bad examples (avoid these):
+    - execute(command="cd /foo/bar && pytest tests")  # Use absolute path instead
+    - execute(command="cat file.txt")  # Use read_file tool instead
+    - execute(command="find . -name '*.py'")  # Use glob tool instead
+    - execute(command="grep -r 'pattern' .")  # Use grep tool instead
+
+Note: Remember set the appropriate timeout for long-running commands."""
+
 # 开发新任务时，将新任务工作空间挂载到该目录下
 CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX = {
     "linux": "/tmp/persistent/agent_workspace/warehouse",
@@ -157,18 +201,16 @@ SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = """
 ├── TASKS.md           # 功能点待办列表
 └── README.md          # 项目说明文档
 
-3. **文件操作原则**：
-   - 读取文件时使用绝对路径或相对于 `/tmp/persistent/agent_workspace/{{project_name}}` 的路径
-   - 项目工作空间一般会被自动创建，禁止自行创建项目工作空间。
-   - 所有团队成员共享同一项目工作空间，注意文件命名避免冲突
+3. **特殊文件说明**：
+   - `/tmp/persistent/agent_workspace/warehouse/{{project_name}}/TASKS.md`用于定义软件功能点列表，由Alice负责创建，由Eva负责维护每个功能点状态，Bob只能读不能写！
+   - `/tmp/persistent/agent_workspace/warehouse/{{project_name}}/docs/SOFTWARE_DEFINITION.md`用于记录用户原始需求和软件整体功能定义，仅由Alice创建，其他成员只读不能写！
 
 ## 工具使用原则
 1. 绝不调用那些会返回无法解读信息的工具，尤其是snapshot、screenshot这类返回base64编码字符串的截图工具，避免摄入大量无用信息
 2. 若想调用的某个工具返回效果不理想，你可以自己编写python脚本并且通过`execute`工具执行
 
 ## 异常情况处理
-1. 若`/tmp/persistent/agent_workspace/`下不存在项目工作空间，属于异常情况，应该主动汇报"REQUEST_REJECTED：项目工作空间不存在，拒绝继续执行"
-"""
+1. 若`/tmp/persistent/agent_workspace/`下不存在项目工作空间，属于异常情况，应该主动汇报"REQUEST_REJECTED：项目工作空间不存在，拒绝继续执行" """
 
 # 自动开发的配置
 TASK_DONE_IDENTIFIER = "TASK_DONE"

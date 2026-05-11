@@ -38,7 +38,7 @@ source .venv/bin/activate
 
 为避免从 PyPI 官方源下载时的超时问题，**必须**配置国内镜像源。
 
-#### 方法 1：临时使用（单次安装）
+#### 单次安装直接使用-i参数（安装前确保激活项目虚拟环境）
 
 ```bash
 # 阿里云镜像（推荐，速度快且稳定）
@@ -57,7 +57,7 @@ pip install <package_name> -i https://pypi.douban.com/simple
 
 ### 3. 安装项目依赖
 
-#### 从 requirements.txt 安装
+#### 从 requirements.txt 安装（若当前python项目已有requirements.txt）
 
 ```bash
 # 使用国内镜像源安装所有依赖
@@ -91,7 +91,7 @@ ERROR: No matching distribution found for xxx
 
 **解决方案：**
 ```bash
-# 增加超时时间并使用镜像源
+# 使用镜像源并增加超时时间并
 pip install <package> -i https://mirrors.aliyun.com/pypi/simple/ --timeout 300
 ```
 
@@ -167,11 +167,11 @@ source .venv/bin/activate  # Linux/macOS
    requests>=2.28.0,<3.0.0
    ```
 4. **编写高质量代码**
-- 代码必须可运行，无语法错误
 - 变量命名清晰有意义
 - 关键逻辑添加注释
 - 适当的错误处理
 - 避免硬编码，使用常量或配置
+- 代码通过运行来Debug
 
 #### ❌ 避免的做法
 

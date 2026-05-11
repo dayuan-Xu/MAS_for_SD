@@ -49,7 +49,7 @@ def should_end_multi_loop(_react_loop_count, msg: AIMessage | None) -> tuple[boo
 # 异步版本
 async def multi_react_loop(task: Task,
                            dev_team: AgentTeam,
-                           recursion_limit: int = 300,
+                           recursion_limit: int = 10_000,
                            enable_brown: bool = False):
     """
     基于agentbay_based_dev_team的异步自动化软件开发
@@ -141,7 +141,7 @@ async def multi_react_loop(task: Task,
         dev_team.download_and_cleanup(success=task_success)
 
 
-# 一次自动化开发（异步）
+# 一次自动化开发
 async def auto_dev(task: Task, enable_brown=False):
     """
     异步执行一次自动化软件开发任务（使用带MCP工具的DevTeam）
@@ -156,7 +156,7 @@ async def auto_dev(task: Task, enable_brown=False):
     # 为每个任务配置独立的日志系统
     setup_logging(task_name=task.name, log_level=logging.INFO)
 
-    # 创建与当前任务关联的沙盒实例
+    # 创建与当前任务关联的沙盒实例，是否复用task box由enable_brown控制
     with LinuxSandboxBackend(task_name=task.name, reuse_existing_task_context_box=enable_brown) as sandbox:
 
         # 创建带 MCP 工具的dev_team实例
@@ -166,8 +166,8 @@ async def auto_dev(task: Task, enable_brown=False):
             await multi_react_loop(
                 task,
                 dev_team,
-                recursion_limit=350,  # tank battle刚好是300次顶层节点结束
-                enable_brown=enable_brown)
+                recursion_limit=10_000,  # 为每个智能体设定的顶层节点步数
+                enable_brown=enable_brown)  # 是否新开thread_id由enable_brown控制
         except Exception as e:
             # 计算耗时（即使失败也要统计）
             elapsed_time = time.time() - start_time

@@ -165,7 +165,7 @@ class CommunicateToolSchema(BaseModel):
 
 
 def _build_send_message_tool(*,
-                             user_name: str = "Tim Leader",
+                             user_name: str = "Message Sender Name",
                              experts: list[_ExpertAgentSpec],
                              ) -> StructuredTool:
     """构建assign工具，支持向专家团队委派任务。
@@ -221,7 +221,8 @@ def _build_send_message_tool(*,
             }
         )
 
-    def _validate_and_prepare_call(expert_name: str, private_message: str, runtime: Any) -> tuple[Any, dict, str]:
+    def _validate_and_prepare_call(expert_name: str, private_message: str, runtime: ToolRuntime) -> tuple[
+        Any, dict, str]:
         """验证专家名称并准备调用配置。
         
         ⭐ 关键改进：从 runtime.state 中读取或生成专家的 thread_id
@@ -249,7 +250,10 @@ def _build_send_message_tool(*,
             logger.debug(f"♻️ 当前专家不是第一次被assign，复用专家 '{expert_name}' 已有的 thread_id: {expert_thread_id}")
 
         # 构建专家输入状态（因为专家有自己的 checkpointer，只需要构建一条人类消息，不要获取其完整的最新图状态）
-        private_message = f"Message from {user_name}:\n {private_message}"
+        # # ✅ 获取智能体名称
+        config = runtime.config
+        sender_name = config['metadata'].get('lc_agent_name', user_name)
+        private_message = f"Message from {sender_name}:\n {private_message}"
         expert_input = {"messages": [HumanMessage(content=private_message)]}
 
         return expert, expert_input, expert_thread_id
@@ -301,7 +305,8 @@ def _build_send_message_tool(*,
                     **runtime.config.get("configurable", {}),
                     "thread_id": expert_thread_id,  # 覆盖为专家的 thread_id
                     "checkpoint_ns": f"expert:{expert_name}"  # ⭐ 为每个专家设置独立的 namespace
-                }
+                },
+                "tags": runtime.config["tags"] + [f"{expert_name}"]
             }
 
             # 调用专家，专家会根据 thread_id 自动持久化到自己的 checkpointer
@@ -369,8 +374,9 @@ def _build_send_message_tool(*,
                 "configurable": {
                     **runtime.config.get("configurable", {}),
                     "thread_id": expert_thread_id,  # 覆盖为专家的 thread_id
-                    "checkpoint_ns": f"expert:{expert_name}"  # ⭐ 为每个专家设置独立的 namespace
-                }
+                    "checkpoint_ns": f"expert:{expert_name}"  # ⭐ 为每个专家设置独立的 namespace，使其检查点独立于主调智能体
+                },
+                "tags": runtime.config["tags"] + [f"{expert_name}"]
             }
 
             # 异步调用专家，专家会根据 thread_id 自动持久化到自己的 checkpointer
@@ -434,7 +440,7 @@ class CommunicateMiddleware(AgentMiddleware[CommunicateState, ContextT, Response
     def __init__(
             self,
             *,
-            user_name: str = "Tim Leader",
+            user_name: str = "Message Sender Name",
             experts: Sequence[CompiledExpertAgent] | None = None,
             system_prompt: str | None = COMMUNICATE_SYSTEM_PROMPT,
             **kwargs: Any,

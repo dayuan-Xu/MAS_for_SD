@@ -280,13 +280,13 @@ class LinuxSandboxBackend(BaseSandbox):
             error_msg = command_result.error_message
             output = error_msg
             if r'"system_error":"Command timed out"' in error_msg:
-                output = "execute工具执行超时，请设置更大的timeout！"
+                output = f"shell命令执行超时（timeout={timeout}），请为本次shell命令（{command}）设置更大的timeout后重试！"
 
             logger.error(
                 f"❌ session.command.execute_command 执行失败:\n"
                 f"失败的shell命令：\n"
-                f"超时时间设置：{timeout} 秒\n"
                 f"{command}\n"
+                f"超时时间设置：{timeout} 秒\n"
                 f"智能体所见的shell工具执行结果：\n"
                 f"{output}\n"
                 f"API返回的错误消息：\n"
@@ -817,7 +817,7 @@ class LinuxSandboxBackend(BaseSandbox):
                 f"已经退出{self.__class__.__name__}的with块，但当前会话没有被杀死，由退出函数负责兜底删除该还活跃着的会话")
             self.delete_session()
         if exc_type:
-            logger.info(f"❌ {self.__class__.__name__} 运行期间发生错误: {exc_val}")
+            logger.info(f"❌ {self.__class__.__name__} 运行期间发生错误: {exc_val}", exc_info=True)
         return False  # 不吞掉异常
 
 

@@ -36,6 +36,8 @@ import logging
 from typing import Any, Dict, Optional
 
 from langchain.agents.middleware.types import AgentMiddleware, AgentState
+from langgraph.runtime import Runtime
+from langgraph.typing import ContextT
 
 
 class AgentActivityMonitor(AgentMiddleware[AgentState]):
@@ -64,11 +66,12 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
         ```
     """
 
-    def __init__(self):
+    def __init__(self, *, agent_name="Agent Name"):
         """初始化监控中间件。"""
+        self.agent_name = agent_name
         self.logger = logging.getLogger(__name__)
 
-    def before_model(self, state: AgentState, runtime) -> Optional[Dict[str, Any]]:
+    def before_model(self, state: AgentState, runtime: Runtime[ContextT]) -> Optional[Dict[str, Any]]:
         """模型调用前钩子 - 记录工具执行情况。
         
         从 state 的消息历史中查找所有连续的工具执行结果（支持并行工具调用），
@@ -103,7 +106,8 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
 
             separator = "=" * 80
             self.logger.info(separator)
-            self.logger.info(f"🛠️ [AgentActivityMonitor] 工具执行详情 (共 {len(tool_messages)} 个工具)")
+            self.logger.info(
+                f"🛠️ [AgentActivityMonitor] 工具执行详情(共 {len(tool_messages)} 个工具) 调用者：{self.agent_name}")
             self.logger.info(separator)
 
             # 处理每个工具执行结果
@@ -157,6 +161,8 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
             None（不修改 state）
         """
         try:
+            # ✅ 获取智能体名称
+            agent_name = self.agent_name
             messages = state.get("messages", [])
 
             if not messages:
@@ -171,22 +177,22 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
 
             separator = "=" * 80
             self.logger.info(separator)
-            self.logger.info("🤖 [AgentActivityMonitor] AI 响应")
+            self.logger.info(f"🤖 [AgentActivityMonitor] AI 响应来自：{self.agent_name}")
             self.logger.info(separator)
 
             # 记录 AI 文本内容
             if last_msg.content:
-                self.logger.info(f"AIMessage Content:\n{last_msg.content}")
+                self.logger.info(f"AIMessage Content from {agent_name}:\n{last_msg.content}")
 
             # 记录工具调用请求（如果有）
             if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
-                self.logger.info(f"\n🔧 工具调用请求 (共 {len(last_msg.tool_calls)} 个):")
+                self.logger.info(f"🔧 工具调用请求 (共 {len(last_msg.tool_calls)} 个):")
                 for idx, tool_call in enumerate(last_msg.tool_calls, 1):
                     tool_name = tool_call.get('name', 'unknown')
                     tool_args = tool_call.get('args', {})
                     tool_id = tool_call.get('id', 'N/A')
 
-                    self.logger.info(f"\n--- AIMessage Tool Calls: {idx}/{len(last_msg.tool_calls)} ---")
+                    self.logger.info(f"\n=== AIMessage Tool Calls: {idx}/{len(last_msg.tool_calls)} ===")
                     self.logger.info(f"工具名称: {tool_name}")
                     self.logger.info(f"调用ID: {tool_id}")
                     self.logger.info(f"调用参数: {tool_args}")
