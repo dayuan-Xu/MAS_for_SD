@@ -63,7 +63,9 @@ async def experiment():
     software_dev_7 = load_dataset(SOFTWARE_DEV_7_PATH)
 
     tasks = software_dev_7.tasks
-    experiment_logger.info(f"\n{'=' * 60}\n🚀 开始异步串行执行 {len(tasks)} 个软件开发任务\n{'=' * 60}\n")
+    experiment_logger.info('=' * 600)
+    experiment_logger.info("🚀 开始异步串行执行 {len(tasks)} 个软件开发任务")
+    experiment_logger.info('=' * 60)
     task_results = []
     total_start_time = time.time()
 
@@ -87,11 +89,11 @@ async def experiment():
             time_str = get_time_str(elapsed_time)
 
             if result['success']:
-                experiment_logger.info(f"  ✅ 运行成功: {task.name} (耗时: {time_str})")
+                experiment_logger.info(f"✅ 运行成功: {task.name} (耗时: {time_str})")
             else:
-                experiment_logger.info(f"  ❌ 运行失败: {task.name} (耗时: {time_str})")
+                experiment_logger.info(f"❌ 运行失败: {task.name} (耗时: {time_str})")
                 if 'error' in result:
-                    experiment_logger.info(f"     ❌ 错误信息: {result['error']}")
+                    experiment_logger.info(f"❌ 错误信息: {result['error']}")
 
     total_time = time.time() - total_start_time
     total_time_str = get_time_str(total_time)
@@ -101,16 +103,16 @@ async def experiment():
     success_count = sum(result['success'] for result in task_results)
     failed_count = sum(not result['success'] for result in task_results)
     experiment_logger.info(f"总共运行: {total_count} 个任务")
-    experiment_logger.info(f"  ✅ 成功: {success_count} 个")
-    experiment_logger.info(f"  ❌ 失败: {failed_count} 个")
-    experiment_logger.info(f"  ⏱️  总耗时: {total_time_str}")
+    experiment_logger.info(f"✅ 成功: {success_count} 个")
+    experiment_logger.info(f"❌ 失败: {failed_count} 个")
+    experiment_logger.info(f"⏱️ 总耗时: {total_time_str}")
 
     # 对失败的结果记录详细错误信息
     for i, result in enumerate(task_results):
         if not result['success']:
-            experiment_logger.info(f"\n❌ 运行失败: {result['task_name']}")
+            experiment_logger.info(f"❌ 运行失败: {result['task_name']}")
             if 'error' in result:
-                experiment_logger.info(f"   ❌ 错误信息: {result['error']}")
+                experiment_logger.info(f"❌ 错误信息: {result['error']}")
     experiment_logger.info(f"📝 实验统计日志文件: {log_file}")
 
 
@@ -127,18 +129,20 @@ if __name__ == "__main__":
     asyncio.run(experiment())
 
 """
-1. 6人智能体开发团队太复杂，协作动态难以分析。
-3人或者说两人智能体的紧密协作才好分析一些！
-实验项目最好由易到难，比如streamlit的两个实验再到四个难的游戏：
-贪吃蛇、打砖块、像素鸟、坦克大战。
-自己的方法先追求软件可用数超过基线，再追求全部可用！
+实验思路：
+- 实验项目最好由易到难，比如streamlit的两个实验再到四个难的游戏：贪吃蛇、打砖块、像素鸟、坦克大战。自己的方法先追求软件可用数超过基线，再追求全部可用！
 
-2. 必须启用postgres checkpointer，这样后续可以基于某个智能体的执行历史与其对话，获知他对工具的理解，并最大限度地剔除不必要工具！
-工具越少越好！目前web模态应用ui交互操作验证工具最成熟，完全可以剔除已安装应用启动杀死工具、桌面窗口控制工具？总之工具越少越好！
+- 已经启用postgres checkpointer，这样后续可以基于某个智能体的执行历史与其对话，获知他对工具的理解。
 
-工具使用技能不断由智能体探索完善，让智能体探索发现哪个场景是使用某工具的最佳或合适的时机！并将之最有用的工具写入技能文件！
+- 最大限度地剔除不必要工具，工具越少越好！目前web模态应用ui交互操作验证工具最成熟，完全可以剔除已安装应用启动杀死工具、桌面窗口控制工具？
 
+- 注入人格性格特征，让builder敢于尝试和与evaluator协作询问。
 
-3. 注入人格性格特征，让builder敢于尝试和与evaluator协作询问。验收标准本质上是一种规格说明。可用阶段tasks列表->吸引力阶段tasks列表？
-为工程师注入python全全开发技能，重点关注包安装技能，不要只会从官方源下载
+- 验收标准本质上是一种规格说明；可用阶段tasks列表->吸引力阶段tasks列表，创建多阶段软件功能点列表？
+
+- （伪）代码表示智能体开发团队的工作流程以减少自然语言歧义？
+
+下一步检验：
+- Builder是否正确认识到需要加载软件开发技能、软件功能验证技能？ 以获取创建虚拟环境和安装依赖包、利用浏览器工具感知UI的指导信息
+- 是否存在某部分提示词影响智能体行为：sys prompt、middleware prompt、tool description
 """

@@ -104,7 +104,8 @@ async def multi_react_loop(task: Task,
                 if should_break:
                     break
 
-                input_text = f"用户无暇亲临指导，请确保软件符合原始需求并可交付，否则继续开发。若当前软件已可交付则仅仅回复'{TASK_DONE_IDENTIFIER}'"
+                # input_text = f"用户无暇亲临指导，请确保软件符合原始需求并可交付，否则继续开发。若当前软件已可交付则仅仅回复'{TASK_DONE_IDENTIFIER}'"
+                input_text = f"若当前软件已经完成“基础版”下所有软件功能点的开发，则仅回复'{TASK_DONE_IDENTIFIER}'"
 
             dev_input = {"messages": [{"role": "user", "content": input_text}]}
 
