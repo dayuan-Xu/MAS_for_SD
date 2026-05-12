@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 class AgentConfig:
     """智能体配置"""
     role: str  # 角色名称（用于获取系统提示词）
-    name: str  # 智能体显示名称
+    name: str  # 智能体名称
     skill_paths: list[str] = field(default_factory=list)  # 技能路径列表（文件系统基于Backend）
     mcp_tools: list = field(default_factory=list)  # MCP工具
     experts: list = field(default_factory=list)  # 专家列表（用于assign）

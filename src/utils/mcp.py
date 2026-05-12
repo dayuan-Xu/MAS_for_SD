@@ -23,7 +23,8 @@ def get_excluded_tools():
         "shell",  # 和sandbox backend提供的execute工具重合
     }
     too_large_returns_tools = {
-        "browser_take_screenshot", "browser_snapshot", "page_use_screenshot", "screenshot",  # 返回大段base64编码后的字符串的工具
+        "browser_take_screenshot", "browser_snapshot",
+        "page_use_screenshot", "screenshot",  # 返回大段base64编码后的字符串的工具
     }
 
     useless_tools = {

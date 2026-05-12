@@ -179,7 +179,7 @@ EXCLUDED_FILE_EXTENSIONS = {
 }
 PRESERVED_HIDDEN_FILES = {'.env', '.gitignore', '.dockerignore'}
 
-AGENTBAY_IMAGE_ID = "imgc-0a8urjag1l02wa4og"
+AGENTBAY_IMAGE_ID = "imgc-0aae4rgke8zkhucji"
 AGENTBAY_MCP_SERVER_NAME = "sandbox"
 
 SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = """

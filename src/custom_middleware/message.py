@@ -32,7 +32,6 @@ from langchain.agents.middleware.types import AgentMiddleware, AgentState, Conte
     ResponseT
 from langchain.tools import ToolRuntime
 from langchain_core.messages import HumanMessage, ToolMessage
-from langchain_core.runnables import Runnable
 from langchain_core.tools import StructuredTool
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
@@ -55,12 +54,12 @@ class CompiledExpertAgent(TypedDict):
     """
 
     name: str
-    """Unique identifier for the expert agent."""
+    """Unique identifier in the main agent's eyes for the expert agent."""
 
     description: str
     """What this expert agent does."""
 
-    runnable: Runnable
+    runnable: CompiledStateGraph
     """A custom agent implementation.
 
     Create a custom agent using either:
@@ -73,9 +72,10 @@ class CompiledExpertAgent(TypedDict):
     """
 
 
-def create_compiled_expert_agent(agent, description: str):
+def create_compiled_expert_agent(agent: CompiledStateGraph, description: str):
+    name = agent.name
     return CompiledExpertAgent(
-        name=agent.name,
+        name=name,
         runnable=agent,
         description=description
     )
@@ -181,9 +181,9 @@ def _build_send_message_tool(*,
         结构化的assign工具
     """
 
-    # ⭐ 为每个专家创建一个线程锁，用于防止同一专家的并行调用
+    # 为每个专家创建一个线程锁，用于防止同一专家的并行调用
     expert_locks: dict[str, threading.Lock] = {spec["name"]: threading.Lock() for spec in experts}
-    # ⭐ 为每个专家创建一个 asyncio 锁，用于异步版本
+    # 为每个专家创建一个 asyncio 锁，用于异步版本
     expert_async_locks: dict[str, asyncio.Lock] = {spec["name"]: asyncio.Lock() for spec in experts}
 
     # 构建专家图谱字典和描述字符串
@@ -197,7 +197,7 @@ def _build_send_message_tool(*,
                                           expert_result: dict) -> Command:
         """处理专家执行结果并返回Command对象。
         
-        ⭐ 关键：只更新 expert_thread_ids（如果新生成的话），不维护专家完整状态
+        只更新 expert_thread_ids（如果新生成的话），不维护专家完整状态
         """
         if "messages" not in expert_result:
             error_msg = (
@@ -213,7 +213,7 @@ def _build_send_message_tool(*,
         if message_text:
             message_text = message_text.rstrip()
 
-        # ⭐ 只返回当前专家的 thread_id 更新（如果是新生成的）
+        # 只返回当前专家的 thread_id 更新（如果是新生成的）
         return Command(
             update={
                 "expert_thread_ids": {expert_name: expert_thread_id},
@@ -225,7 +225,7 @@ def _build_send_message_tool(*,
         Any, dict, str]:
         """验证专家名称并准备调用配置。
         
-        ⭐ 关键改进：从 runtime.state 中读取或生成专家的 thread_id
+        关键改进：从 runtime.state 中读取或生成专家的 thread_id
         
         Returns:
             tuple: (expert runnable, input state, expert_thread_id)
@@ -238,7 +238,7 @@ def _build_send_message_tool(*,
 
         expert = expert_graphs[expert_name]
 
-        # ⭐ 关键：从 Leader 状态中读取或生成专家的 thread_id
+        # 从 Leader/Planner 状态中读取或生成专家的 thread_id
         expert_thread_ids = runtime.state.get("expert_thread_ids", {})
         expert_thread_id = expert_thread_ids.get(expert_name)
 
@@ -250,9 +250,8 @@ def _build_send_message_tool(*,
             logger.debug(f"♻️ 当前专家不是第一次被assign，复用专家 '{expert_name}' 已有的 thread_id: {expert_thread_id}")
 
         # 构建专家输入状态（因为专家有自己的 checkpointer，只需要构建一条人类消息，不要获取其完整的最新图状态）
-        # # ✅ 获取智能体名称
-        config = runtime.config
-        sender_name = config['metadata'].get('lc_agent_name', user_name)
+        # 设置消息发送者名称
+        sender_name = user_name
         private_message = f"Message from {sender_name}:\n {private_message}"
         expert_input = {"messages": [HumanMessage(content=private_message)]}
 
@@ -463,11 +462,12 @@ class CommunicateMiddleware(AgentMiddleware[CommunicateState, ContextT, Response
         expert_specs: list[_ExpertAgentSpec] = []
         for expert in experts:
             compiled = expert
-            expert_specs.append({
+            dict_: _ExpertAgentSpec = {
                 "name": compiled["name"],
                 "description": compiled["description"],
-                "runnable": compiled["runnable"]
-            })
+                "runnable": compiled["runnable"],
+            }
+            expert_specs.append(dict_)
 
         self.user_name = user_name
 
