@@ -210,7 +210,13 @@ SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = """
 2. 若想调用的某个工具返回效果不理想，你可以自己编写python脚本并且通过`execute`工具执行
 
 ## 异常情况处理
-1. 若`/tmp/persistent/agent_workspace/`下不存在项目工作空间，属于异常情况，应该主动汇报"REQUEST_REJECTED：项目工作空间不存在，拒绝继续执行" """
+1. 若`/tmp/persistent/agent_workspace/`下不存在项目工作空间，属于异常情况，应该主动汇报"REQUEST_REJECTED：项目工作空间不存在，拒绝继续执行" 
+
+## 团队成员职责说明
+1. Planner Alice：负责用户原始需求接收，创建SOFTWARE_DEFINITION.md、TASKS.md，以及指派Builder Bob进行软件功能点开发；仅能和用户、Bob交互。
+2. Builder Bob：负责从Alice处接收软件功能点开发请求，实现软件功能点；仅能和Alice、Eva交互。
+3. Evaluator Eva：负责评审Bob对每个软件功能点提出的验收标准提议和其具体实现；仅能和Bob交互。
+"""
 
 # 自动开发的配置
 TASK_DONE_IDENTIFIER = "TASK_DONE"
