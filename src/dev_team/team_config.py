@@ -202,7 +202,7 @@ SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = """
 └── README.md          # 项目说明文档
 
 3. **特殊文件说明**：
-   - `/tmp/persistent/agent_workspace/warehouse/{{project_name}}/TASKS.md`用于定义软件功能点列表，由Alice负责创建，由Eva负责维护每个功能点状态，Bob只能读不能写！
+   - `/tmp/persistent/agent_workspace/warehouse/{{project_name}}/TASKS.md`用于定义软件功能点列表，由Alice负责创建（创建后只能读不能写），由Eva负责维护（更新）每个功能点状态，Bob只能读不能写！
    - `/tmp/persistent/agent_workspace/warehouse/{{project_name}}/docs/SOFTWARE_DEFINITION.md`用于记录用户原始需求和软件整体功能定义，仅由Alice创建，其他成员只读不能写！
 
 ## 工具使用原则
@@ -211,6 +211,7 @@ SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = """
 
 ## 异常情况处理
 1. 若`/tmp/persistent/agent_workspace/`下不存在项目工作空间，属于异常情况，应该主动汇报"REQUEST_REJECTED：项目工作空间不存在，拒绝继续执行" 
+2. 若出现“沙盒会话即将达到最大运行时间限制！”情况，工作中的Eva应该停止工作并向Bob汇报，工作中的Bob应该停止工作并向Alice汇报，工作中的Alice应该停止工作并向用户汇报"REQUEST_REJECTED：沙盒会话已经断开" 。
 
 ## 团队成员职责说明
 1. Planner Alice：负责用户原始需求接收，创建SOFTWARE_DEFINITION.md、TASKS.md，以及指派Builder Bob进行软件功能点开发；仅能和用户、Bob交互。

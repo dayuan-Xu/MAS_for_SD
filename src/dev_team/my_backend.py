@@ -3,7 +3,6 @@ import base64
 import json
 import logging
 import os
-import sys
 import tempfile
 import time
 from datetime import datetime
@@ -19,6 +18,7 @@ from deepagents.backends.utils import _get_file_type
 from src.config.config_logging import setup_logging
 from src.config.settings import settings
 from src.dev_team.team_config import CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX, AGENTBAY_IMAGE_ID
+from src.paths import LOCAL_WAREHOUSE_PATH
 from src.utils.common import to_snake_case, should_skip_path, write_content_to_file, process_command_parts, \
     map_agentbay_error_to_file_operation_error
 
@@ -152,16 +152,17 @@ class LinuxSandboxBackend(BaseSandbox):
         self.sandbox_type = "linux"
 
         self._idle_timeout = idle_timeout
-        self._sandbox_max_running_time_str = "2 hours"  # 当前镜像的最长持续运行时间（字符串描述）
-        self._sandbox_max_running_time_seconds = 2 * 60 * 60  # 2小时转换为秒
+        self._sandbox_max_running_time_str = "3 hours"  # 当前镜像的最长持续运行时间（字符串描述）
+        self._sandbox_max_running_time_seconds = 3 * 60 * 60  # 3小时转换为秒
+        self.time_for_products_download = 10  # 在达到当前镜像的最长持续运行时间的10 分钟前主动提前释放沙盒会话
         self._session_start_time = None  # 会话创建时间戳
-        self._session: Session = None
-        self._session_id = None  # 用于暂停会话后，重新连接该会话（目前未实现会话暂停）
+        self._session: Session = None  # 初始化为None，释放后也应该赋值为None
+        self._session_id = None  # 用于暂停会话后，重新连接该会话（目前未实现会话暂停）。初始化为None
         self.sandbox_id = None  # 即self._session_id，用于向智能体开发团队暴露其各种AgentBay MCP工具的的执行环境
         self.task_context_box_id = None  # 存储任务上下文盒子的ID
 
-        # 明确定义 task_context_box_name
-        self.task_context_box_name = self.task_name
+        # 明确定义 task_context_box_name 初始值为task_name
+        self.task_context_box_name = task_name
 
         # 确定当前 task的context box 在sandbox中的挂载路径
         self._task_context_box_mount_path_prefix = CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX[
@@ -200,32 +201,49 @@ class LinuxSandboxBackend(BaseSandbox):
 
         # 计算剩余时间
         remaining_seconds = self._sandbox_max_running_time_seconds - elapsed_seconds
-        remaining_minutes = remaining_seconds / 60
 
-        logger.debug(f"🕒 会话运行状态: 已运行 {elapsed_seconds / 60:.1f} 分钟, 剩余 {remaining_minutes:.1f} 分钟")
+        if remaining_seconds < 0:
+            # 会话已过期，但是还有工具调用在执行，则抛出异常给ToolRetryMiddleware的钩子函数
+            raise RuntimeError(f"⚠️ 沙盒会话已被主动提前断开并且距离断开已经过了一段时间！\n"
+                               f"   - 最大运行时间: {self._sandbox_max_running_time_str} ({self._sandbox_max_running_time_seconds}秒)\n"
+                               f"   - 已运行时间: {elapsed_seconds / 60:.1f} 分钟\n"
+                               f"   - 会话已经过期了{(-remaining_seconds) / 60} 分钟 {(-remaining_seconds) % 60} 秒\n")
 
-        # 如果剩余时间不足10分钟，提前清理并抛出异常
-        if remaining_minutes <= 10:
-            error_msg = (
-                f"沙盒会话即将达到最大运行时间限制！\n"
-                f"   - 最大运行时间: {self._sandbox_max_running_time_str} ({self._sandbox_max_running_time_seconds}秒)\n"
-                f"   - 已运行时间: {elapsed_seconds / 60:.1f} 分钟\n"
-                f"   - 剩余时间: {remaining_minutes:.1f} 分钟\n"
-                f"   - 会话ID: {self._session_id}\n"
-                f"为避免会话突然过期导致数据丢失，将主动终止当前进程。"
-            )
+        # 如果剩余时间不足10分钟=10*60秒，提前清理并抛出异常
+        time_threshold_seconds = self.time_for_products_download * 60
+        if 0 <= remaining_seconds <= time_threshold_seconds:
+            remaining_minutes = remaining_seconds / 60
 
-            logger.error(f"❌ {error_msg}")
+            logger.debug(f"🕒 会话运行状态: 已运行 {elapsed_seconds / 60:.1f} 分钟, 剩余 {remaining_minutes:.1f} 分钟")
+            if self._session is not None:
+                # 第一次检测到应该释放，那就释放。
+                error_msg = (
+                    f"沙盒会话即将达到最大运行时间限制！\n"
+                    f"   - 最大运行时间: {self._sandbox_max_running_time_str} ({self._sandbox_max_running_time_seconds}秒)\n"
+                    f"   - 已运行时间: {elapsed_seconds / 60:.1f} 分钟\n"
+                    f"   - 剩余时间: {remaining_minutes:.1f} 分钟\n"
+                    f"   - 会话ID: {self._session_id}\n"
+                    f"为避免会话突然过期导致沙盒软件成果物无法及时下载到本地，将主动提前断开当前沙盒会话。"
+                )
 
-            # 主动删除会话，同步数据到 OSS
-            try:
-                self.delete_session()
-                logger.info("✅ 已主动清理即将过期的会话")
-            except Exception as e:
-                logger.warning(f"⚠️ 清理会话时出现异常: {e}")
+                logger.error(f"❌ {error_msg}")
 
-            # 直接终止程序
-            sys.exit(1)
+                # 主动删除会话，同步数据到 OSS
+                try:
+                    self.download_task_artifacts(LOCAL_WAREHOUSE_PATH / self.task_name)
+                    self.delete_session()
+                    logger.info("✅ 为避免会话突然过期导致沙盒软件成果物无法及时下载到本地，已主动清理成功即将过期的会话")
+                except Exception as e:
+                    logger.warning(
+                        f"⚠️ 为避免会话突然过期导致沙盒软件成果物无法及时下载到本地，主动清理会话时出现异常: {e}")
+
+                else:
+                    raise RuntimeError(error_msg)
+            elif self._session_id is None:
+                # 已经释放掉，但是还有工具调用正在执行，则抛出异常给ToolRetryMiddleware的钩子函数
+                raise RuntimeError(f"⚠️ 沙盒会话已被主动提前断开！\n"
+                                   f"   - 最大运行时间: {self._sandbox_max_running_time_str} ({self._sandbox_max_running_time_seconds}秒)\n"
+                                   f"   - 已运行时间: {elapsed_seconds / 60:.1f} 分钟\n")
 
     def execute(
             self,
@@ -439,6 +457,7 @@ class LinuxSandboxBackend(BaseSandbox):
         elif get_result.success and not self.reuse_existing:
             new_name = f"{self.task_context_box_name}_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}"
             old_name = self.task_context_box_name
+            # 更新任务存储盒名
             self.task_context_box_name = new_name
             logger.warning(
                 f"❗ 任务存储盒 '{old_name}' 已存在，创建新的: '{new_name}'"
@@ -753,12 +772,12 @@ class LinuxSandboxBackend(BaseSandbox):
 
         if not self.task_name:
             logger.warning("⚠️ 未关联任务名，跳过下载")
-            return False
+            return -1
 
         if not self._session:
             logger.error("❌ 会话不存在，跳过下载", exc_info=True)
             logger.info("会话不存在，无法下载成果物")
-            return False
+            return -1
 
         try:
             cloud_path = self.task_context_box_mount_path
@@ -775,7 +794,7 @@ class LinuxSandboxBackend(BaseSandbox):
 
         except Exception as e:
             logger.error(f"❌ 下载失败: {e}", exc_info=True)
-            return -1
+            return -2
 
     def delete_session(self):
         """清理资源，删除AgentBay会话"""
@@ -823,7 +842,7 @@ class LinuxSandboxBackend(BaseSandbox):
 
 def download_artifacts_manually(task_name_: str):
     """手动下载task context box到本地"""
-    local_download_dir = f"./warehouse/T{task_name_}"
+    local_download_dir = f"./warehouse/{task_name_}/manually_download/"
     logger.info(f"开始手动下载任务 {task_name_} 的成果物到 {local_download_dir}")
     with LinuxSandboxBackend(task_name=task_name_) as sandbox_:
         path = Path(local_download_dir)
@@ -833,23 +852,23 @@ def download_artifacts_manually(task_name_: str):
 if __name__ == "__main__":
     setup_logging()
 
-    # 1. 使用 with 语句测试沙盒，确保资源自动释放
-    logger.info("\n--- 开始沙盒后端功能测试 ---")
-    with LinuxSandboxBackend(task_name="Agent test") as sandbox_test:
-        # 测试命令执行（包含超时逻辑）
-        # sandbox_test.execute("pwd")
-        # sandbox_test.execute("echo 'Test command execution' > /home/wuying/test.txt && echo 'command execution success!'")
-        # sandbox_test.execute("ls -l /home/wuying/test.txt")
-        # sandbox_test.execute("cat /home/wuying/test.txt")
-        sandbox_test.execute(
-            "pip3 install streamlit -i https://pypi.tuna.tsinghua.edu.cn/simple --timeout 60 > /home/wuying/install.log 2>&1",
-            timeout=300)
-        sandbox_test.execute("cat /home/wuying/install.log")
+    # # 1. 使用 with 语句测试沙盒，确保资源自动释放
+    # logger.info("\n--- 开始沙盒后端功能测试 ---")
+    # with LinuxSandboxBackend(task_name="Agent test") as sandbox_test:
+    #     # 测试命令执行（包含超时逻辑）
+    #     # sandbox_test.execute("pwd")
+    #     # sandbox_test.execute("echo 'Test command execution' > /home/wuying/test.txt && echo 'command execution success!'")
+    #     # sandbox_test.execute("ls -l /home/wuying/test.txt")
+    #     # sandbox_test.execute("cat /home/wuying/test.txt")
+    #     sandbox_test.execute(
+    #         "pip3 install streamlit -i https://pypi.tuna.tsinghua.edu.cn/simple --timeout 60 > /home/wuying/install.log 2>&1",
+    #         timeout=300)
+    #     sandbox_test.execute("cat /home/wuying/install.log")
+    #
+    #     # # 测试文件上传（包含二进制兼容逻辑）
+    #     # sandbox.upload_files([("test1.txt", b"Hello, World!")])
+    #
+    # logger.info("---沙盒后端测试结束，资源应已自动释放 ---")
 
-        # # 测试文件上传（包含二进制兼容逻辑）
-        # sandbox.upload_files([("test1.txt", b"Hello, World!")])
-
-    logger.info("---沙盒后端测试结束，资源应已自动释放 ---")
-
-    # # 2. 手动下载task context box到本地
-    # download_artifacts_manually("CRUD manage")
+    # 2. 手动下载task context box到本地
+    download_artifacts_manually("Brick breaker game")

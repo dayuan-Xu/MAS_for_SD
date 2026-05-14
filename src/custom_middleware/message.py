@@ -25,11 +25,11 @@ import asyncio
 import logging
 import threading
 import uuid
-from typing import Any, Sequence, Callable, NotRequired, TypedDict, Annotated
+from typing import Any, Sequence, Callable, TypedDict, Annotated
 
 from deepagents.middleware._utils import append_to_system_message
 from langchain.agents.middleware.types import AgentMiddleware, AgentState, ContextT, ModelRequest, ModelResponse, \
-    ResponseT
+    ResponseT, PrivateStateAttr
 from langchain.tools import ToolRuntime
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
@@ -89,33 +89,6 @@ class _ExpertAgentSpec(TypedDict):
     runnable: CompiledStateGraph
 
 
-def merge_expert_thread_ids(left: dict | None, right: dict | None) -> dict:
-    """合并两个并行的 expert_thread_ids 更新。
-
-    用于处理并行 communicate 调用时的状态更新冲突。
-    
-    LangGraph 的 reducer 函数必须能够处理 None 值
-
-    Args:
-        left: 第一个字典（可能是 None）
-        right: 第二个字典（可能是 None），可能包含某个专家的最新 thread_id
-
-    Returns:
-        合并后的字典
-    """
-    logger.debug(f"reducer被调用，处理 expert_thread_ids 状态更新：{left} -> {right}")
-    # 处理 None 值
-    if left is None:
-        left = {}
-    if right is None:
-        return left
-
-    # 合并两个字典（right 中的值会覆盖 left 中的同名键）
-    merged = dict(left)
-    merged.update(right)
-    return merged
-
-
 class CommunicateState(AgentState):
     """CommunicateMiddleware 的状态 Schema。
     
@@ -123,8 +96,11 @@ class CommunicateState(AgentState):
     这样可以在多次 Communicate 调用之间保持对专家 thread_id 的追踪，
     而专家的完整图状态由专家自己的 checkpointer 根据 thread_id 自主管理。
     """
-    expert_thread_ids: NotRequired[Annotated[dict[str, str], merge_expert_thread_ids]]
-    """每个专家的 thread_id 字典。键为专家名称，值为 thread_id。使用自定义 reducer 支持并行更新。"""
+    # expert_thread_ids: NotRequired[dict[str, str]]
+    # """每个专家的 thread_id 字典。键为专家名称，值为 thread_id。可以不包含在State中，向后兼容。因为不是个累积的通道，所以不需要自定义 reducer。"""
+    expert_thread_ids: Annotated[dict[str, str], PrivateStateAttr]
+    """每个专家的 thread_id 字典。键为专家名称，值为 thread_id。PrivateStateAttr 明确表达了"这是内部状态用户不应该关心"。
+    显示表明不应该合并到图的InputSchema中，不能由用户输入注入到，也不会暴露在最终输出中"""
 
 
 MESSAGE_TOOL_DESCRIPTION = """Communicate with a specific expert agent in the development team by sending a message.
@@ -166,7 +142,7 @@ class CommunicateToolSchema(BaseModel):
 
 def _build_send_message_tool(*,
                              user_name: str = "Message Sender Name",
-                             experts: list[_ExpertAgentSpec],
+                             expert_specs: list[_ExpertAgentSpec],
                              ) -> StructuredTool:
     """构建assign工具，支持向专家团队委派任务。
     
@@ -175,54 +151,47 @@ def _build_send_message_tool(*,
     
     Args:
         user_name: 用户名称，用于注入private message作为send name
-        experts: 专家智能体规格列表
+        expert_specs: 专家智能体规格列表
         
     Returns:
         结构化的assign工具
     """
 
     # 为每个专家创建一个线程锁，用于防止同一专家的并行调用
-    expert_locks: dict[str, threading.Lock] = {spec["name"]: threading.Lock() for spec in experts}
+    expert_locks: dict[str, threading.Lock] = {spec["name"]: threading.Lock() for spec in expert_specs}
     # 为每个专家创建一个 asyncio 锁，用于异步版本
-    expert_async_locks: dict[str, asyncio.Lock] = {spec["name"]: asyncio.Lock() for spec in experts}
+    expert_async_locks: dict[str, asyncio.Lock] = {spec["name"]: asyncio.Lock() for spec in expert_specs}
 
     # 构建专家图谱字典和描述字符串
-    expert_graphs: dict[str, CompiledStateGraph] = {spec["name"]: spec["runnable"] for spec in experts}
-    expert_description_str = "\n".join(f"- {s['name']}: {s['description']}" for s in experts)
+    expert_name_to_graphs: dict[str, CompiledStateGraph] = {spec["name"]: spec["runnable"] for spec in expert_specs}
+    expert_name_to_description_str = "\n".join(f"- {s['name']}: {s['description']}" for s in expert_specs)
 
     # 格式化描述文本
-    description = MESSAGE_TOOL_DESCRIPTION.format(available_experts=expert_description_str)
+    description = MESSAGE_TOOL_DESCRIPTION.format(available_experts=expert_name_to_description_str)
 
-    def _return_command_with_state_update(expert_name: str, expert_thread_id: str, runtime: ToolRuntime,
-                                          expert_result: dict) -> Command:
+    def _return_command_with_state_update(expert_name: str, runtime: ToolRuntime, expert_result: dict) -> Command:
         """处理专家执行结果并返回Command对象。
-        
-        只更新 expert_thread_ids（如果新生成的话），不维护专家完整状态
+        :rtype: Command
         """
         if "messages" not in expert_result:
-            error_msg = (
-                "Expert agent must return a state containing a 'messages' key. "
-                "Custom StateGraphs used with CompiledExpertAgent should include 'messages' "
-                "in their state schema to communicate results back to the main agent."
-            )
+            error_msg = ("专家智能体必须返回包含“messages”这个key的状态字典。"
+                         "传入 CompiledExpertAgent 中的自定义状态图应在其状态模式中包含'messages'，以便将结果传回主智能体。")
             raise ValueError(error_msg)
 
         # 提取最后一条消息的文本内容，作为返回给主调智能体
         last_message = expert_result["messages"][-1]
-        message_text = getattr(last_message, 'content', '') or getattr(last_message, 'text', '')
-        if message_text:
-            message_text = message_text.rstrip()
+        message_content = getattr(last_message, 'content', '') or getattr(last_message, 'text', '')
+        if isinstance(message_content, str):
+            message_content = f"Response from {expert_name}:\n" + message_content
 
-        # 只返回当前专家的 thread_id 更新（如果是新生成的）
+        # 只返回当前专家本次ReAct循环的最后一条AIMessage
         return Command(
             update={
-                "expert_thread_ids": {expert_name: expert_thread_id},
-                "messages": [ToolMessage(message_text, tool_call_id=runtime.tool_call_id)],
+                "messages": [ToolMessage(message_content, tool_call_id=runtime.tool_call_id)],
             }
         )
 
-    def _validate_and_prepare_call(expert_name: str, private_message: str, runtime: ToolRuntime) -> tuple[
-        Any, dict, str]:
+    def _validate_and_prepare_call(expert_name: str, private_message: str, runtime: ToolRuntime) -> tuple:
         """验证专家名称并准备调用配置。
         
         关键改进：从 runtime.state 中读取或生成专家的 thread_id
@@ -230,24 +199,24 @@ def _build_send_message_tool(*,
         Returns:
             tuple: (expert runnable, input state, expert_thread_id)
         """
-        if expert_name not in expert_graphs:
-            allowed_names = ", ".join([f"`{k}`" for k in expert_graphs])
+        if expert_name not in expert_name_to_graphs:
+            allowed_names = ", ".join([f"`{k}`" for k in expert_name_to_graphs])
             raise ValueError(
                 f"Expert '{expert_name}' does not exist. Available experts: {allowed_names}"
             )
 
-        expert = expert_graphs[expert_name]
+        expert = expert_name_to_graphs[expert_name]
 
-        # 从 Leader/Planner 状态中读取或生成专家的 thread_id
+        # 从 Leader/Planner 状态中读取已经生成的专家的 thread_id
         expert_thread_ids = runtime.state.get("expert_thread_ids", {})
         expert_thread_id = expert_thread_ids.get(expert_name)
 
-        if not expert_thread_id:
-            # 首次调用该专家，生成新的 thread_id
-            expert_thread_id = str(uuid.uuid4())
-            logger.info(f"🆕 当前专家第一次被assign，为专家 '{expert_name}' 生成 thread_id: {expert_thread_id}")
-        else:
-            logger.debug(f"♻️ 当前专家不是第一次被assign，复用专家 '{expert_name}' 已有的 thread_id: {expert_thread_id}")
+        if expert_thread_id is None:
+            # 上抛
+            raise ValueError(
+                f"'{expert_name}'还没有被分配一个thread id。 "
+                f"请在当前MessageMiddleware.(a)before_agent中为当前MessageMiddleware实例所拥有的每位专家智能体分配一个thread id。"
+            )
 
         # 构建专家输入状态（因为专家有自己的 checkpointer，只需要构建一条人类消息，不要获取其完整的最新图状态）
         # 设置消息发送者名称
@@ -262,31 +231,33 @@ def _build_send_message_tool(*,
             expert_name: str,
             runtime: ToolRuntime,
     ) -> str | Command:
-        """同步版本的assign函数。
+        """同步版本的send_message函数。
         
-        ⭐ 使用线程锁防止同一专家的并行调用，如果检测到并发则直接返回错误
-        ⭐ 关键改进：传入专家的 thread_id，让专家自主持久化状态
+        使用线程锁防止同一专家的并行调用，如果检测到并发则直接返回错误
+        关键改进：传入专家的 thread_id，让专家自主持久化状态
         """
         if not runtime.tool_call_id:
             raise ValueError("Tool call ID is required for expert assignment")
 
-        # ⭐ 获取该专家的锁
+        # 获取该专家的锁
         lock = expert_locks.get(expert_name)
         if not lock:
             raise ValueError(f"Expert '{expert_name}' not found in locks")
 
-        # ⭐ 尝试非阻塞获取锁，如果失败说明有并发调用，直接返回错误
+        # 尝试非阻塞获取锁，如果失败说明有并发调用，直接返回错误
         acquired = lock.acquire(blocking=False)
         if not acquired:
             logger.warning(
                 f"⚠️ 检测到并发调用：专家 '{expert_name}' 正在执行另一个任务。"
-                f"不支持对同一专家智能体并行调用 assign，请顺序调用。"
+                f"不支持对同一专家智能体并行调用 send_message，请顺序调用。"
             )
             # 直接返回错误消息，不阻塞等待
             return Command(
                 update={
                     "messages": [ToolMessage(
-                        content=f"❌ 错误：专家 '{expert_name}' 正在执行另一个任务。不支持对同一专家智能体并行调用 assign。请等待当前任务完成后再调用，或指派其他专家。",
+                        content=f"❌ 错误：专家智能体 '{expert_name}' 正在执行另一个任务。"
+                                f"不支持对同一专家智能体并行调用 send_message。"
+                                f"请等待当前任务完成后再调用，或指派其他专家。",
                         tool_call_id=runtime.tool_call_id
                     )]
                 }
@@ -295,36 +266,39 @@ def _build_send_message_tool(*,
         try:
             expert, expert_input, expert_thread_id = _validate_and_prepare_call(expert_name, private_message,
                                                                                 runtime)
-            logger.debug(f"开始执行专家 {expert_name} 的任务 (thread_id: {expert_thread_id})...")
 
-            # ⭐ 关键：构建专家的配置，传入其专属的 thread_id 和 checkpoint_ns
+            logger.debug(f"开始执行专家 {expert_name}")
+
+            # 关键：构建专家的配置，传入其专属的 thread_id 和 checkpoint_ns
             expert_config = {
                 **runtime.config,
+                "tags": runtime.config["tags"] + [f"{expert_name}"],
                 "configurable": {
                     **runtime.config.get("configurable", {}),
                     "thread_id": expert_thread_id,  # 覆盖为专家的 thread_id
-                    "checkpoint_ns": f"expert:{expert_name}"  # ⭐ 为每个专家设置独立的 namespace
+                    "checkpoint_ns": f"expert:{expert_name}"  # 为每个专家设置独立的 namespace
                 },
-                "tags": runtime.config["tags"] + [f"{expert_name}"]
             }
 
             # 调用专家，专家会根据 thread_id 自动持久化到自己的 checkpointer
             expert_result = expert.invoke(expert_input, config=expert_config)
 
-            logger.debug(f"专家 {expert_name} 任务执行完成 (thread_id: {expert_thread_id})")
-            return _return_command_with_state_update(expert_name, expert_thread_id, runtime, expert_result)
+            logger.debug(
+                f"专家智能体 {expert_name} 任务执行完成，将提取其最后一条不包含工具调用的AIMessage返回给主调智能体")
+
+            return _return_command_with_state_update(expert_name, runtime, expert_result)
         except Exception as e:
-            logger.error(f"专家 {expert_name} 执行失败: {e}", exc_info=True)
+            logger.error(f"专家智能体 {expert_name} 执行过程中出现异常: {e}", exc_info=True)
             return Command(
                 update={
                     "messages": [ToolMessage(
-                        f"专家 {expert_name} 执行失败: {str(e)}",
+                        f"专家智能体 {expert_name} 执行过程中出现异常: {str(e)}",
                         tool_call_id=runtime.tool_call_id
                     )]
                 }
             )
         finally:
-            # ⭐ 释放锁
+            # 释放锁
             lock.release()
 
     async def asend_message(
@@ -334,24 +308,24 @@ def _build_send_message_tool(*,
     ) -> str | Command:
         """异步版本的assign函数。
         
-        ⭐ 使用 asyncio 锁防止同一专家的并行调用
-        ⭐ 关键改进：传入专家的 thread_id，让专家自主持久化状态
+        使用 asyncio 锁防止同一专家的并行调用
+        关键改进：传入专家的 thread_id，让专家自主持久化状态
         """
         if not runtime.tool_call_id:
             raise ValueError("Tool call ID is required for expert assignment")
 
-        # ⭐ 获取该专家的 asyncio 锁
+        # 获取该专家的 asyncio 锁
         lock = expert_async_locks.get(expert_name)
         if not lock:
             raise ValueError(f"Expert '{expert_name}' not found in async locks")
 
-        # ⭐ 尝试获取锁，如果锁已被占用，说明有并发调用
+        # 尝试获取锁，如果锁已被占用，说明有并发调用
         try:
             acquired = lock.acquire(False)  # 非阻塞尝试
             if not acquired:
                 logger.warning(
                     f"⚠️ 检测到并发调用：专家 '{expert_name}' 正在执行另一个任务。"
-                    f"当前调用将被阻塞，直到前一个任务完成。建议避免同时多次 assign 同一个专家。"
+                    f"当前调用将被阻塞，直到前一个任务完成。建议避免同时多次 send_message 同一个专家。"
                 )
                 # 阻塞等待锁释放
                 await lock.acquire()
@@ -367,28 +341,35 @@ def _build_send_message_tool(*,
                                                                                 runtime)
             logger.debug(f"开始异步执行专家 {expert_name} 的任务 (thread_id: {expert_thread_id})...")
 
-            # ⭐ 关键：构建专家的配置，传入其专属的 thread_id 和 checkpoint_ns
+            # 构建专家的配置，传入其专属的 thread_id 和 checkpoint_ns
             expert_config = {
                 **runtime.config,
+                "tags": runtime.config["tags"] + [f"{expert_name}"],
                 "configurable": {
                     **runtime.config.get("configurable", {}),
                     "thread_id": expert_thread_id,  # 覆盖为专家的 thread_id
-                    "checkpoint_ns": f"expert:{expert_name}"  # ⭐ 为每个专家设置独立的 namespace，使其检查点独立于主调智能体
+                    "checkpoint_ns": f"expert:{expert_name}"  # 为每个专家设置独立的 namespace，使其检查点独立于主调智能体
                 },
-                "tags": runtime.config["tags"] + [f"{expert_name}"]
             }
 
             # 异步调用专家，专家会根据 thread_id 自动持久化到自己的 checkpointer
-            expert_result = await expert.ainvoke(expert_input, config=expert_config)
+            expert_result: dict = await expert.ainvoke(expert_input, config=expert_config)
 
             logger.debug(f"专家 {expert_name} 异步任务执行完成 (thread_id: {expert_thread_id})")
-            return _return_command_with_state_update(expert_name, expert_thread_id, runtime, expert_result)
+
+            # 缺陷是：
+            # 若程序在 expert.ainvoke() 执行过程中被强行终止，而且本次执行该专家之前是新建了expert_thread_id而不是复用已有的expert thread id，
+            # 那么本次新建的expert_thread_id将不会被持久化到Alice的图状态中，
+            # 下次接着Alice的thread id运行Alice，在Alice的MessageMiddlware.abefore_agent钩子函数的输入中会检测到expert_thread_ids这个key不在图状态中！
+            # 修复方法：
+            # 每次send message调用应该仅仅返回ToolMessage到主调智能体的状态中
+            return _return_command_with_state_update(expert_name, runtime, expert_result)
         except Exception as e:
-            logger.error(f"专家 {expert_name} 异步执行失败: {e}", exc_info=True)
+            logger.error(f"专家智能体 {expert_name} 异步执行过程中出现异常: {e}", exc_info=True)
             return Command(
                 update={
                     "messages": [ToolMessage(
-                        f"专家 {expert_name} 执行失败: {str(e)}",
+                        f"专家智能体 {expert_name} 执行过程中出现异常: {str(e)}",
                         tool_call_id=runtime.tool_call_id
                     )]
                 }
@@ -408,30 +389,13 @@ def _build_send_message_tool(*,
 
 
 class CommunicateMiddleware(AgentMiddleware[CommunicateState, ContextT, ResponseT]):
-    """增强版任务委派中间件，提供assign工具用于向专家团队委派任务。
+    """增强版任务委派中间件，提供send_message工具用于向专家团队委派任务。
     
     与标准 CommunicateMiddleware 的核心区别：
     1. 专家智能体编译时传入 checkpointer，实现独立的状态持久化
     2. 只维护 expert_thread_ids 映射，不维护专家完整状态
     3. 调用专家时传入其专属的 thread_id，让专家自主管理状态
     4. 专家状态与 Leader 状态完全解耦
-    
-    Example:
-        ```python
-        from src.custom_middleware.enhanced_assign import CommunicateMiddleware
-        from src.dev_team.team_experts import team_experts
-        
-        leader = create_agent(
-            model=llm,
-            middleware=[
-                CommunicateMiddleware(
-                    backend=my_backend,
-                    experts=team_experts,
-                ),
-                # ... other middleware
-            ],
-        )
-        ```
     """
 
     state_schema = CommunicateState  # ⭐ 声明新的状态 Schema
@@ -454,12 +418,14 @@ class CommunicateMiddleware(AgentMiddleware[CommunicateState, ContextT, Response
         """
         self.logger = logging.getLogger(__name__)
 
+        self.user_name = user_name
+
         # 如果没有提供专家列表，使用默认的team_experts
         if experts is None:
             raise ValueError("Please provide a list of experts for CommunicateMiddleware Instance")
 
         # 将CompiledExpertAgent转换为内部规格格式
-        expert_specs: list[_ExpertAgentSpec] = []
+        self.expert_specs: list[_ExpertAgentSpec] = []
         for expert in experts:
             compiled = expert
             dict_: _ExpertAgentSpec = {
@@ -467,37 +433,52 @@ class CommunicateMiddleware(AgentMiddleware[CommunicateState, ContextT, Response
                 "description": compiled["description"],
                 "runnable": compiled["runnable"],
             }
-            expert_specs.append(dict_)
+            self.expert_specs.append(dict_)
 
-        self.user_name = user_name
+        # 构建send message工具
+        message_tool = _build_send_message_tool(user_name=self.user_name, expert_specs=self.expert_specs)
 
-        # 构建assign工具
-        assign_tool = _build_send_message_tool(user_name=self.user_name, experts=expert_specs)
-
-        self.logger.info(
-            f"为用户 {self.user_name} 创建的团队协作中间件 CommunicateMiddleware 初始化完成，已注册了 {len(expert_specs)} 个专家")
+        self.logger.debug(
+            f"为用户 {self.user_name} 创建的团队协作中间件 CommunicateMiddleware 初始化完成，已注册了 {len(self.expert_specs)} 个专家")
 
         # 构建系统提示词
-        if system_prompt and expert_specs:
-            experts_desc = "\n".join(f"- {s['name']}: {s['description']}" for s in expert_specs)
+        if system_prompt and self.expert_specs:
+            experts_desc = "\n".join(f"- {s['name']}: {s['description']}" for s in self.expert_specs)
             self.system_prompt = system_prompt + "\n\nAvailable experts:\n" + experts_desc
         else:
             self.system_prompt = system_prompt
 
         # 设置工具列表
-        self.tools = [assign_tool]
+        self.tools = [message_tool]
 
     def before_agent(self, state: CommunicateState, runtime) -> dict | None:
         """在 Agent 执行前初始化 expert_thread_ids（如果不存在）。
         
         参考 SkillsMiddleware 的实现，在 before_agent 钩子中初始化新的 state key。
         """
-        # 如果 expert_thread_ids 已经存在，不重复初始化
-        if "expert_thread_ids" in state:
+        if "expert_thread_ids" in state and state["expert_thread_ids"]:
+            logger.debug(
+                f"为用户 {self.user_name} 创建的团队协作中间件 CommunicateMiddleware"
+                f" 检测到 专家线程ID映射 已存在于图状态之中并且不为空: {state['expert_thread_ids']}")
             return None
+        else:
+            logger.debug(
+                f"为用户 {self.user_name} 创建的团队协作中间件 CommunicateMiddleware 正在初始化 专家线程ID映射")
 
-        # 初始化为空字典
-        return {"expert_thread_ids": {}}
+            logger.warning(
+                f"为用户 {self.user_name} 创建的团队协作中间件 CommunicateMiddleware "
+                f"检测到 专家线程ID映射 目前不存在！")
+
+            # 初始化为非空字典
+            expert_name_to_thread_id = {expert_spec["name"]: str(uuid.uuid4()) for expert_spec in self.expert_specs}
+
+            logger.info(
+                f"智能体{self.user_name}的 CommunicateMiddleware 实例"
+                f"成功为该智能体初始化了 专家名到其线程ID 的映射: {expert_name_to_thread_id}")
+
+            return {
+                "expert_thread_ids": expert_name_to_thread_id
+            }
 
     async def abefore_agent(self, state: CommunicateState, runtime) -> dict | None:
         """异步版本的 before_agent。"""

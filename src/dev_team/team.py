@@ -20,6 +20,7 @@ from src.config.llm import LLMs
 from src.config.settings import settings
 from src.custom_middleware.agent_activity_monitor import AgentActivityMonitor
 from src.custom_middleware.message import CommunicateMiddleware, create_compiled_expert_agent
+from src.custom_middleware.message_sequence_validator import MessageSequenceValidator
 from src.custom_middleware.my_skills import MySkillsMiddleware
 from src.custom_middleware.prompt_inject import SystemPromptInjectMiddleware
 from src.dev_team.my_backend import LinuxSandboxBackend
@@ -270,6 +271,7 @@ class AgentTeam:
             list: 中间件列表
         """
         middlewares = [
+            MessageSequenceValidator(),  # ⭐ 消息序列完整性检查（放在最外层）
             self.injected_prompt_middleware_1,
             todo_list_middleware,
             self._shared_filesystem_middleware]
@@ -375,6 +377,7 @@ class AgentTeam:
             "description": general_purpose_description,
             "system_prompt": "In order to complete the objective that the user asks of you, you have access to a number of standard tools.",
             "middleware": [
+                MessageSequenceValidator(),  # ⭐ 消息序列完整性检查（放在最外层）
                 self._shared_filesystem_middleware,
                 skills_middleware,
                 summarization_middleware,
@@ -547,7 +550,10 @@ class AgentTeam:
             try:
                 downloaded_count = self.sandbox.download_task_artifacts(local_dir)
                 if not downloaded_count >= 1:
-                    raise Exception(f"没有成功下载任何成果物文件：已下载成果物文件数 = {downloaded_count}")
+                    if downloaded_count == -1:
+                        logger.error("任务不存在or会话已经失效，跳过已经被下载")
+                    elif downloaded_count == -2:
+                        logger.error(f"任务存在并且会话不为None，但是下载过程中出现异常")
                 logger.info(f"成果物下载完成")
             except Exception as e:
                 logger.error(f"成果物下载失败: {e}", exc_info=True)
@@ -574,6 +580,7 @@ class AgentTeam:
         # 2 创建 TraceableTask 实例
         traceable_task = TraceableTask(
             thread_id=thread_id,
+            task_context_box_name=self.sandbox.task_context_box_name,
             task_context_box_id=task_context_box_id,
             task=task
         )
@@ -589,29 +596,33 @@ class AgentTeam:
             yaml.dump(traceable_task.to_dict(), f, allow_unicode=True)
             logger.info(f"✅ 任务启动记录已保存: {task_file_path}")
 
-    def green_or_brown(self, task: Task, force_using_new_thread: bool = False) -> str:
+    def green_or_brown(self, task: Task, force_using_new_thread: bool = False) -> (str, bool):
         """判断任务是否是绿色开发，如果是，则返回新的thread_id，
         否则若强制在旧存储盒基础上新开thread_id，则返回新的thread_id,反之返回已存在的thread_id"""
+        is_brown = False
         task_file_path = REGISTERED_TASKS_PATH / f"{task.name}.yaml"
         if not task_file_path.exists():
             logger.info(f"任务记录不存在: {task_file_path}")
             logger.info(f"将创建新的thread_id，开展绿地开发")
             thread_id = str(uuid.uuid4())
             self.save_traceable_task_to_file(thread_id, task)
-            return thread_id
+            return thread_id, is_brown
 
         logger.info(f"任务记录已存在: {task_file_path}")
         if force_using_new_thread:
             logger.info(f"但是本次强制新开thread_id，将覆盖原有thread_id，开展绿地开发")
             thread_id = str(uuid.uuid4())
             self.save_traceable_task_to_file(thread_id, task)
-            return thread_id
+            return thread_id, is_brown
 
         logger.info(f"将复用已有的thread_id，开展棕地开发")
+        is_brown = True
 
         # 读取任务记录文件
-        traceable_task = TraceableTask.from_dict(yaml.load(task_file_path.open(), Loader=yaml.FullLoader))
-        return traceable_task.thread_id
+        # 读取任务记录文件
+        with open(task_file_path, 'r', encoding='utf-8') as f:
+            traceable_task = TraceableTask.from_dict(yaml.load(f, Loader=yaml.FullLoader))
+        return traceable_task.thread_id, is_brown
 
     # ========== 代理所有调用方法 ==========
 

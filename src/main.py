@@ -10,12 +10,21 @@ from src.dev_team.my_backend import LinuxSandboxBackend
 from src.dev_team.team import AgentTeam
 from src.paths import SOFTWARE_DEV_7_PATH
 from src.utils.common import get_time_str
-from src.utils.datasets import load_dataset
+from src.utils.datasets import load_dataset, Task
 from src.utils.graph_running import async_multi_turn_conversation
 
 
-async def talk_with_agent_team(*, task_name="Agent test", thread_id: str = ""):
+async def talk_with_agent_team(*, task: Task | None = None):
     """测试专家智能体"""
+    task_name = ""
+    if task is None:
+        task_name = "Agent test"
+    elif task is not None:
+        task_name = task.name
+        enable_brown_choice = input(
+            f"是否为当前任务:{task_name}启用棕地开发检测（y-yes，n-no），若检测到可以进行棕地开发则将进行棕地开发；若不检测，默认绿地开发！")
+        enable_brown = True if enable_brown_choice.strip().lower() == 'y' else False
+
     setup_logging(task_name=task_name)
 
     # 创建与当前任务关联的沙盒实例
@@ -31,8 +40,10 @@ async def talk_with_agent_team(*, task_name="Agent test", thread_id: str = ""):
 
         print(f"\n🎯 选择测试的专家: {agent.name}")
 
-        if not thread_id:
+        if task_name == "Agent test":
             thread_id = str(uuid.uuid4())
+        else:
+            thread_id = dev_team.green_or_brown(task, force_using_new_thread=enable_brown)
 
         # 配置运行参数
         run_config: RunnableConfig = {
@@ -58,7 +69,7 @@ async def experiment():
 
     tasks = software_dev_7.tasks
     experiment_logger.info('=' * 600)
-    experiment_logger.info("🚀 开始异步串行执行 {len(tasks)} 个软件开发任务")
+    experiment_logger.info(f"🚀 开始异步串行执行 {len(tasks)} 个软件开发任务")
     experiment_logger.info('=' * 60)
     task_results = []
     total_start_time = time.time()
@@ -73,9 +84,12 @@ async def experiment():
             continue
         elif instruction.lower() == 'y':
             experiment_logger.info(f"🚀 开始进行任务{task.name}")
+            enable_brown_choice = input(
+                f"是否为当前任务:{task.name}启用棕地开发检测（y-yes，n-no），若检测到可以进行棕地开发则将进行棕地开发；若不检测，默认绿地开发！")
+            enable_brown = True if enable_brown_choice.strip().lower() == 'y' else False
 
             # 异步运行软件开发任务（严格串行，等待上一个任务完全结束）
-            result = await auto_dev(task, enable_brown=False)  # 强制绿地开发
+            result = await auto_dev(task, enable_brown=enable_brown)  # 强制绿地开发
 
             task_results.append(result)
 
@@ -119,23 +133,14 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     # 运行任务
-    # asyncio.run(talk_with_agent_team(thread_id="c713dd84-414f-444b-b3a6-6f7cba6d535d"))
-    asyncio.run(experiment())
+    asyncio.run(talk_with_agent_team())
+    # asyncio.run(experiment())
 
 """
 实验思路：
 - 实验项目最好由易到难，比如streamlit的两个实验再到五个难的游戏：2048 < 贪吃蛇 < 打砖块 ≈ 像素鸟 << 坦克大战。自己的方法先追求软件可用数超过基线（实现5=2+3个游戏即可），再追求全部可用！
 
 - 已经启用postgres checkpointer，这样后续可以基于某个智能体的执行历史与其对话，获知他对工具的理解。目前好像无法实现，只能传入planner的thread_id，并提供planner转述对话要求。
-
-对于crud_manage任务，已知planner alice（thread_id="c713dd84-414f-444b-b3a6-6f7cba6d535d"）的图状态中有：
- "expert_thread_ids": {
-    "Bob_Builder": "03f5d5bf-53c3-4c93-b87b-94e333f44f90"
-  }
-Bob_Builder的图状态中有：
-"expert_thread_ids": {
-  "Eva_Evaluator": "aab95d66-260e-4372-b860-5689cbe456f3"
-}
 
 - 最大限度地剔除不必要工具，工具越少越好！目前web模态应用ui交互操作验证工具最成熟，完全可以剔除已安装应用启动杀死工具、桌面窗口控制工具？
 

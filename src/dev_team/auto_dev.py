@@ -68,11 +68,11 @@ async def multi_react_loop(task: Task,
     task_working_dir = dev_team.task_working_dir
 
     if enable_brown:
-        # 检查是否存在旧thread_id，存在的话就开展棕地开发
-        thread_id = dev_team.green_or_brown(task, force_using_new_thread=False)
+        # 检查是否存在旧thread_id，存在的话就开展棕地开发（is_brown为True），不存在的话实际上还是绿地开发（is_brown为False）
+        thread_id, is_brown = dev_team.green_or_brown(task, force_using_new_thread=False)
     else:
-        # 即便有旧thread_id，也强制新开thread_id
-        thread_id = dev_team.green_or_brown(task, force_using_new_thread=True)
+        # 即便有旧thread_id，也强制新开thread_id，此时is_brown必定为False
+        thread_id, is_brown = dev_team.green_or_brown(task, force_using_new_thread=True)
 
     config_across_react_loop: RunnableConfig = {
         "tags": [f"{task_name}"],
@@ -92,11 +92,22 @@ async def multi_react_loop(task: Task,
         while True:
             # 第一次用户输入
             if input_text is None:
-                input_text = (f"针对一个软件需求完成开发。\n"
-                              f"软件需求描述如下：\n"
-                              f"task_name:{task_name}\n"
-                              f"task_description:{task_description}\n"
-                              f"项目工作空间为：{task_working_dir}")
+                if enable_brown and is_brown:
+                    # 真正进行棕地开发
+                    input_text = (f"棕地开发！继续完成未完成的‘基础版’软件功能点\n"
+                                  f"软件需求描述如下：\n"
+                                  f"task_name:{task_name}\n"
+                                  f"task_description:{task_description}\n"
+                                  f"项目工作空间为：{task_working_dir}\n")
+                else:
+                    # 绿地开发
+                    input_text = (f"针对一个软件需求完成开发。\n"
+                                  f"软件需求描述如下：\n"
+                                  f"task_name:{task_name}\n"
+                                  f"task_description:{task_description}\n"
+                                  f"项目工作空间为：{task_working_dir}")
+
+
             else:
                 # 或者上个ReAct循环结束后，等待用户本轮输入
                 react_loop_count = react_loop_count + 1
@@ -155,34 +166,43 @@ async def auto_dev(task: Task, enable_brown=False):
 
     # 为每个任务配置独立的日志系统
     setup_logging(task_name=task.name, log_level=logging.INFO)
+    logger.info(f"任务开始: {task.name}，对于该任务，当前是否启用棕地开发检测：{enable_brown}")
 
-    # 创建与当前任务关联的沙盒实例，是否复用task box由enable_brown控制
-    with LinuxSandboxBackend(task_name=task.name, reuse_existing_task_context_box=enable_brown) as sandbox:
+    try:
 
-        # 创建带 MCP 工具的dev_team实例
-        dev_team = await AgentTeam.create_with_agentbay_mcp(sandbox)
-        try:
-            # 开启多轮react loop
-            await multi_react_loop(
-                task,
-                dev_team,
-                recursion_limit=10_000,  # 为每个智能体设定的顶层节点步数
-                enable_brown=enable_brown)  # 是否新开thread_id由enable_brown控制
-        except Exception as e:
-            # 计算耗时（即使失败也要统计）
-            elapsed_time = time.time() - start_time
-            logger.error(f"❌ 任务 '{task.name}' 执行失败 ，多轮react loop中出现异常: {e}", exc_info=True)
-            return {
-                'task_name': task.name,
-                'success': False,
-                'elapsed_time': elapsed_time,
-                'error': str(e)
-            }
-        else:
-            # 计算耗时
-            elapsed_time = time.time() - start_time
-            return {
-                'task_name': task.name,
-                'success': True,
-                'elapsed_time': elapsed_time
-            }
+        # 创建与当前任务关联的沙盒实例，是否复用task box由enable_brown控制
+        with LinuxSandboxBackend(task_name=task.name, reuse_existing_task_context_box=enable_brown) as sandbox:
+
+            # 创建带 MCP 工具的dev_team实例
+            dev_team = await AgentTeam.create_with_agentbay_mcp(sandbox)
+            try:
+                # 开启多轮react loop
+                await multi_react_loop(
+                    task,
+                    dev_team,
+                    recursion_limit=10_000,  # 为每个智能体设定的顶层节点步数
+                    enable_brown=enable_brown)  # 是否新开thread_id由enable_brown控制
+            except Exception as e:
+                # 计算耗时（即使失败也要统计）
+                elapsed_time = time.time() - start_time
+                logger.error(f"❌ 任务 '{task.name}' 执行失败 ，多轮react loop中出现异常: {e}", exc_info=True)
+                return {
+                    'task_name': task.name,
+                    'success': False,
+                    'elapsed_time': elapsed_time,
+                    'error': str(e)
+                }
+            else:
+                # 计算耗时
+                elapsed_time = time.time() - start_time
+                return {
+                    'task_name': task.name,
+                    'success': True,
+                    'elapsed_time': elapsed_time
+                }
+    except RuntimeError as e:
+        if "沙盒会话即将达到最大运行时间限制" in str(e):
+            # 捕获并打印异常
+            logger.error(f"❌ 本次软件开发任务运行时间过长，沙盒自动释放了，任务 '{task.name}' 执行失败: {e}",
+                         exc_info=True)
+            return {'task_name': task.name, 'success': False, 'elapsed_time': time.time() - start_time}

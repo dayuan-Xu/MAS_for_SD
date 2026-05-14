@@ -19,7 +19,7 @@ def get_excluded_tools():
     # 与LangChain文件系统中间件重合的工具
     redundant_tools = {
         "read_file", "write_file", "edit_file", "copy_file", "move_file",
-        "create_directory", "search_file", "list_directory", "read_multiple_file",
+        "create_directory", "search_file", "list_directory", "read_multiple_files",
         "shell",  # 和sandbox backend提供的execute工具重合
     }
     too_large_returns_tools = {
@@ -33,7 +33,11 @@ def get_excluded_tools():
         "get_metrics"
     }
 
-    my_excluded_tools = sandbox_tools | redundant_tools | too_large_returns_tools | useless_tools
+    dangerous_tools = {
+        "delete_file",  # 危险工具
+    }
+
+    my_excluded_tools = sandbox_tools | redundant_tools | too_large_returns_tools | useless_tools | dangerous_tools
     return my_excluded_tools
 
 
