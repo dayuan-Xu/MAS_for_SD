@@ -8,7 +8,8 @@ from langchain_core.runnables import RunnableConfig
 from src.config.config_logging import setup_logging
 from src.dev_team.my_backend import LinuxSandboxBackend
 from src.dev_team.team import AgentTeam
-from src.dev_team.team_config import TASK_DONE_IDENTIFIER, TASK_REJECTED_IDENTIFIER, MAX_REACT_LOOP_COUNT
+from src.dev_team.team_config import TASK_DONE_IDENTIFIER, TASK_REJECTED_IDENTIFIER, MAX_REACT_LOOP_COUNT, \
+    EXCEPTION_IDENTIFIER
 from src.utils.common import is_task_done, is_task_rejected
 from src.utils.datasets import Task
 
@@ -35,6 +36,14 @@ def should_end_multi_loop(_react_loop_count, msg: AIMessage | None) -> tuple[boo
         should_break_ = True
         return task_success_, should_break_
 
+    # 检查是否为 EXCEPTION（请求被拒绝，与软件开发需求无关）
+    if is_task_rejected(msg):
+        logger.warning(
+            "\n" + "=" * 41 + f" ⚠️  Team Leader 输出 {EXCEPTION_IDENTIFIER}，出现异常情况！" + "=" * 41 + "\n")
+        task_success_ = False
+        should_break_ = True
+        return task_success_, should_break_
+
     if _react_loop_count > MAX_REACT_LOOP_COUNT:
         logger.error(
             "\n" + "=" * 41 + f" ❌ 开发团队已运行 {MAX_REACT_LOOP_COUNT} 轮 ReAct 循环，失败退出！" + "=" * 41 + "\n")
@@ -49,8 +58,7 @@ def should_end_multi_loop(_react_loop_count, msg: AIMessage | None) -> tuple[boo
 # 异步版本
 async def multi_react_loop(task: Task,
                            dev_team: AgentTeam,
-                           recursion_limit: int = 10_000,
-                           enable_brown: bool = False):
+                           recursion_limit: int = 10_000):
     """
     基于agentbay_based_dev_team的异步自动化软件开发
     
@@ -67,12 +75,8 @@ async def multi_react_loop(task: Task,
     task_description = task.description_CN if task.description_CN else task.description
     task_working_dir = dev_team.task_working_dir
 
-    if enable_brown:
-        # 检查是否存在旧thread_id，存在的话就开展棕地开发（is_brown为True），不存在的话实际上还是绿地开发（is_brown为False）
-        thread_id, is_brown = dev_team.green_or_brown(task, force_using_new_thread=False)
-    else:
-        # 即便有旧thread_id，也强制新开thread_id，此时is_brown必定为False
-        thread_id, is_brown = dev_team.green_or_brown(task, force_using_new_thread=True)
+    thread_id = dev_team.get_thread_id()
+    is_brown = dev_team.get_is_brown()
 
     config_across_react_loop: RunnableConfig = {
         "tags": [f"{task_name}"],
@@ -92,7 +96,7 @@ async def multi_react_loop(task: Task,
         while True:
             # 第一次用户输入
             if input_text is None:
-                if enable_brown and is_brown:
+                if is_brown:
                     # 真正进行棕地开发
                     input_text = (f"棕地开发！继续完成未完成的‘基础版’软件功能点\n"
                                   f"软件需求描述如下：\n"
@@ -171,7 +175,7 @@ async def auto_dev(task: Task, enable_brown=False):
     try:
 
         # 创建与当前任务关联的沙盒实例，是否复用task box由enable_brown控制
-        with LinuxSandboxBackend(task_name=task.name, reuse_existing_task_context_box=enable_brown) as sandbox:
+        with LinuxSandboxBackend(task_name=task.name) as sandbox:
 
             # 创建带 MCP 工具的dev_team实例
             dev_team = await AgentTeam.create_with_agentbay_mcp(sandbox)
@@ -181,7 +185,7 @@ async def auto_dev(task: Task, enable_brown=False):
                     task,
                     dev_team,
                     recursion_limit=10_000,  # 为每个智能体设定的顶层节点步数
-                    enable_brown=enable_brown)  # 是否新开thread_id由enable_brown控制
+                )
             except Exception as e:
                 # 计算耗时（即使失败也要统计）
                 elapsed_time = time.time() - start_time

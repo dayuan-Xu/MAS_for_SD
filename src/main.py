@@ -17,6 +17,8 @@ from src.utils.graph_running import async_multi_turn_conversation
 async def talk_with_agent_team(*, task: Task | None = None):
     """测试专家智能体"""
     task_name = ""
+    enable_brown = False
+
     if task is None:
         task_name = "Agent test"
     elif task is not None:
@@ -31,19 +33,24 @@ async def talk_with_agent_team(*, task: Task | None = None):
     with (LinuxSandboxBackend(task_name=task_name) as sandbox):
         # ✅ 使用异步工厂方法创建带 MCP 工具的 dev_team V2 实例
 
-        dev_team = await AgentTeam.create_with_agentbay_mcp(sandbox)
+        dev_team = await AgentTeam.create_with_agentbay_mcp(sandbox, enable_brown=enable_brown)
 
         role_to_test = input(f"\n请输入要测试的专家角色 ({dev_team.role_to_agent.keys()}): ").strip()
 
         # 选择要测试的专家智能体
         agent: CompiledStateGraph = dev_team.role_to_agent[f'{role_to_test}']
 
+        # graph_png = agent.get_graph(xray=True).draw_mermaid_png()
+        # with open(f"{agent.name}.png", "wb") as f:
+        #     f.write(graph_png)
+        # print(f"{agent.name} 架构图已保存为 {agent.name}.png")
+
         print(f"\n🎯 选择测试的专家: {agent.name}")
 
         if task_name == "Agent test":
             thread_id = str(uuid.uuid4())
         else:
-            thread_id = dev_team.green_or_brown(task, force_using_new_thread=enable_brown)
+            thread_id = dev_team.get_thread_id()
 
         # 配置运行参数
         run_config: RunnableConfig = {
@@ -85,7 +92,7 @@ async def experiment():
         elif instruction.lower() == 'y':
             experiment_logger.info(f"🚀 开始进行任务{task.name}")
             enable_brown_choice = input(
-                f"是否为当前任务:{task.name}启用棕地开发检测（y-yes，n-no），若检测到可以进行棕地开发则将进行棕地开发；若不检测，默认绿地开发！")
+                f"是否为当前任务:{task.name}启用棕地开发检测（y-yes，n-no），若检测到可以进行棕地开发则将进行棕地开发(复用已有的thread_id和task context box)；\n若不检测，默认绿地开发！")
             enable_brown = True if enable_brown_choice.strip().lower() == 'y' else False
 
             # 异步运行软件开发任务（严格串行，等待上一个任务完全结束）
@@ -133,8 +140,8 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     # 运行任务
-    asyncio.run(talk_with_agent_team())
-    # asyncio.run(experiment())
+    # asyncio.run(talk_with_agent_team())
+    asyncio.run(experiment())
 
 """
 实验思路：

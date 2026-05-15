@@ -221,7 +221,9 @@ def _build_send_message_tool(*,
         # 构建专家输入状态（因为专家有自己的 checkpointer，只需要构建一条人类消息，不要获取其完整的最新图状态）
         # 设置消息发送者名称
         sender_name = user_name
-        private_message = f"Message from {sender_name}:\n {private_message}"
+        private_message = (f"1. Here comes a message from {sender_name}:\n"
+                           f"{private_message}\n"
+                           f"2. To respond to {sender_name}, just give your reply to me")
         expert_input = {"messages": [HumanMessage(content=private_message)]}
 
         return expert, expert_input, expert_thread_id

@@ -1,7 +1,7 @@
+import datetime
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Literal
 
@@ -29,10 +29,10 @@ from src.dev_team.shared_middles import todo_list_middleware, summarization_midd
 from src.dev_team.team_config import LEADER_SKILL_PATH, ENGINEER_SKILL_PATH, QA_ENGINEER_SKILL_PATH, \
     MY_COMPOSITE_BACKEND_ROUTES, MY_FILESYSTEM_MIDDLEWARE_SYSTEM_PROMPT, \
     MY_WRITE_FILE_TOOL_DESCRIPTION, AGENTBAY_MCP_SERVER_NAME, BUILDER_SKILL_PATH, EVALUATOR_SKILL_PATH, \
-    SHARED_INFORMATION_AFTER_SYSTEM_PROMPT, MY_EXECUTE_TOOL_DESCRIPTION
+    SHARED_INFORMATION_AFTER_SYSTEM_PROMPT, MY_EXECUTE_TOOL_DESCRIPTION, EXCEPTION_IDENTIFIER
 from src.paths import PROMPTS_DIR, LOCAL_WAREHOUSE_PATH, \
-    REGISTERED_TASKS_PATH
-from src.utils.datasets import Task, TraceableTask
+    REGISTERED_TASKS_PATH, SOFTWARE_DEV_7_PATH
+from src.utils.datasets import Task, TraceableTask, load_dataset
 from src.utils.mcp import get_excluded_tools, load_wuying_mcp_tools
 from src.utils.roles_prompt_manager import get_system_prompt
 
@@ -62,21 +62,26 @@ class AgentTeam:
     # Team 对象完整初始化的入口
     @classmethod
     async def create_with_agentbay_mcp(cls, sandbox: LinuxSandboxBackend,
-                                       local_warehouse: Path = LOCAL_WAREHOUSE_PATH):
+                                       local_warehouse: Path = LOCAL_WAREHOUSE_PATH,
+                                       enable_brown: bool = False):
         """异步工厂方法：创建带有 Wuying AgentBay MCP 工具的 AgentBayBasedDevTeamV2 实例。
 
         这是推荐的初始化方式，会自动加载 Wuying AgentBay MCP 工具并传递给工程师和 QA 工程师。
 
         Args:
-            sandbox: 沙盒实例
-            local_warehouse: 本地项目仓库路径
+            :param local_warehouse:  本地项目仓库路径
+            :param sandbox: 沙盒实例
+            :param enable_brown: 是否启用 棕地开发 探测
 
         Returns:
             AgentTeam: 配置好 MCP 工具的团队实例
-
         """
         # 1. 创建实例
-        instance = cls(sandbox, local_warehouse)
+        instance = cls(
+            sandbox=sandbox,
+            local_warehouse_path=local_warehouse,
+            enable_brown=enable_brown
+        )
 
         # 2. 初始化异步资源
         await instance._initialize_async_resources()
@@ -88,10 +93,11 @@ class AgentTeam:
         logger.info(f"{instance}")
         return instance
 
-    def __init__(self, sandbox: LinuxSandboxBackend,
+    def __init__(self, *, sandbox: LinuxSandboxBackend,
                  local_warehouse_path: Path = LOCAL_WAREHOUSE_PATH,
-                 team_type: Literal["simple", "complex"] = "simple"):
-        """初始化开发团队 V2（同步资源初始化）。
+                 team_type: Literal["single", "dual", "simple", "complex"] = "simple",
+                 enable_brown: bool = False):
+        """初始化开发团队同步资源
         
         ⚠️ 注意：此方法仅初始化同步资源（中间件、backend、LLM等），不会创建 checkpointer 和智能体。
         请使用异步工厂方法 create_with_agentbay_mcp() 进行完整初始化。
@@ -101,17 +107,27 @@ class AgentTeam:
             local_warehouse_path: 本地项目仓库根目录，用于保存任务成果物。
             team_type: 团队类型
         """
-        logger.info("开始同步初始化 AgentTeam的同步资源")
 
-        # 验证 sandbox
-        if not sandbox.task_name:
-            raise ValueError("AgentTeam 实例所用的sandbox必须有一个软件开发任务")
-        if not sandbox.sandbox_id:
-            raise ValueError("AgentTeam 使用的AgentBay MCP 工具必须依赖传入的sandbox的sandbox_id")
+        if team_type not in ["single", "dual", "simple", "complex"]:
+            raise NotImplementedError(f"不支持的 team_type: {team_type}")
+
+        logger.info("开始同步初始化 AgentTeam的同步资源")
 
         # 基本属性
         self.sandbox = sandbox
-        self.sandbox_id = sandbox.sandbox_id
+        self.task_name = sandbox.task_name
+
+        self.enable_brown = enable_brown
+        self.is_brown = None
+
+        self.thread_id = None
+        self.task_context_box_name = None
+        self.task_context_box_id = None
+        self.sandbox_id = None
+
+        # 配置开发环境，包含任务存储盒、沙盒会话创建、本次开发所用的thread_id
+        self.init_dev_team_env()
+
         self.sandbox_type = sandbox.sandbox_type
         self.task_working_dir = sandbox.task_context_box_mount_path  # 本次开发任务的云端项目空间的文件路径
         self.team_type = team_type
@@ -122,7 +138,12 @@ class AgentTeam:
         logger.info(f"智能体开发团队使用的模型: {self._llm.model_name}，温度: {self._llm.temperature}")
 
         # 2. 创建 injected prompt middleware
-        injected_prompt = SHARED_INFORMATION_AFTER_SYSTEM_PROMPT.format(sandbox_id=self.sandbox_id)
+        injected_prompt = SHARED_INFORMATION_AFTER_SYSTEM_PROMPT[team_type].format(sandbox_id=self.sandbox_id,
+                                                                                   exception_identifier=EXCEPTION_IDENTIFIER)
+
+        if self.sandbox_id not in injected_prompt:
+            raise ValueError(f"sandbox id 注入失败，因为注入的提示词中未找到 {self.sandbox_id}")
+
         self.injected_prompt_middleware_1 = SystemPromptInjectMiddleware(prompt=injected_prompt)
 
         # 3. 创建 composite backend
@@ -153,7 +174,7 @@ class AgentTeam:
         self.evaluator_skill_path = EVALUATOR_SKILL_PATH[f"{self.sandbox_type}"]
 
         # 6. 设置时间戳和本地存储路径
-        self._dev_start_timestamp = datetime.now().strftime("%m%d_%H%M")
+        self._dev_start_timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
         logger.info(f"🕒 开发团队启动时间戳: {self._dev_start_timestamp}")
         self.local_dir_for_task_products = local_warehouse_path / sandbox.task_name / self._dev_start_timestamp
 
@@ -173,8 +194,57 @@ class AgentTeam:
         self.builder = None
         self.evaluator = None
         self.role_to_agent = None
+        self.team_type_to_agent = None
 
         logger.info("✅ 同步资源初始化完成")
+
+    def init_dev_team_env(self):
+        task_name = self.sandbox.task_name
+        task_file_path = REGISTERED_TASKS_PATH / f"{task_name}.yaml"
+        datasets = load_dataset(SOFTWARE_DEV_7_PATH)
+        task = datasets.task_name_to_task[task_name]
+
+        if self.enable_brown:
+            if task_file_path.exists():
+                logger.info(f"任务记录已存在: {task_file_path}\n"
+                            f"将使用任务记录中的最近的thread_id")
+                # 读取任务记录文件
+                with open(task_file_path, 'r', encoding='utf-8') as f:
+                    traceable_task = TraceableTask.from_dict(yaml.load(f, Loader=yaml.FullLoader))
+                self.thread_id = traceable_task.thread_ids[-1]
+                self.task_context_box_name = traceable_task.task_context_names[-1]
+                self.is_brown = True
+            else:
+                logger.info(f"任务记录文件不存在: {task_file_path}\n"
+                            f"将创建任务记录文件，开展绿地开发")
+                self.thread_id = str(uuid.uuid4())
+                self.task_context_box_name = f"{task_name}_{datetime.datetime.now().strftime('%m%d_%H%M')}"
+                self.task_context_box_id = self.sandbox.get_or_create_task_context(self.task_context_box_name).id
+                self.is_brown = False
+                self.save_traceable_task_to_file(
+                    new_thread_id=self.thread_id,
+                    new_box_name=self.task_context_box_name,
+                    new_box_id=self.task_context_box_id,
+                    task=task)
+
+        else:
+            logger.info(f"本次强制绿地开发，将更新任务记录文件，开展绿地开发")
+            self.thread_id = str(uuid.uuid4())
+            self.task_context_box_name = f"{task_name}_{datetime.datetime.now().strftime('%m%d_%H%M')}"
+            self.task_context_box_id = self.sandbox.get_or_create_task_context(self.task_context_box_name).id
+            self.is_brown = False
+            self.save_traceable_task_to_file(
+                new_thread_id=self.thread_id,
+                new_box_name=self.task_context_box_name,
+                new_box_id=self.task_context_box_id,
+                task=task)
+
+        # 初始化沙盒会话
+        self.sandbox.init_sandbox(self.task_context_box_name)
+
+        # 验证 sandbox
+        if not self.sandbox.sandbox_id:
+            raise ValueError("AgentTeam 使用的AgentBay MCP 工具必须依赖传入的sandbox的sandbox_id")
 
     async def _initialize_async_resources(self):
         """初始化异步资源：MCP tools 和 checkpointer。"""
@@ -238,6 +308,13 @@ class AgentTeam:
             "evaluator": self.evaluator
         }
 
+        self.team_type_to_agent = {
+            "single": self.builder,
+            "dual": self.builder,
+            "simple": self.planner,
+            "complex": self.leader
+        }
+
         logger.info("✅ 所有智能体创建完成")
 
     def __str__(self):
@@ -245,7 +322,8 @@ class AgentTeam:
                 f"      sandbox={self.sandbox},\n"
                 f"      sandbox_id={self.sandbox_id},\n"
                 f"      sandbox_type={self.sandbox_type}\n"
-                f"      team_type={self.team_type}"
+                f"      team_type={self.team_type}\n"
+                f"      is_brown={self.is_brown}\n"
                 )
 
     def _create_skills_middleware(self, sources: list[str]):
@@ -564,106 +642,70 @@ class AgentTeam:
         # 2. 清理云端会话（无论下载是否成功都要执行）
         self.sandbox.delete_session()
 
-    def save_traceable_task_to_file(self, thread_id: str, task: Task):
-        """保存任务启动记录到 YAML 文件。
+    def save_traceable_task_to_file(self, *, new_thread_id: str, new_box_name, new_box_id, task: Task | None):
+        """保存任务启动记录到 YAML 文件。 """
+        # 1 构造文件路径
+        task_name = self.task_name
+        task_file_path = REGISTERED_TASKS_PATH / f"{task_name}.yaml"
 
-        Args:
-            thread_id: 线程ID
-            task: 任务对象
-        """
-        # 1 从 sandbox 获取 task_context_box_id
-        task_context_box_id = self.sandbox.task_context_box_id
-        if not task_context_box_id:
-            logger.warning("⚠️ sandbox.task_context_box_id 为空，无法保存任务记录")
-            return
-
-        # 2 创建 TraceableTask 实例
-        traceable_task = TraceableTask(
-            thread_id=thread_id,
-            task_context_box_name=self.sandbox.task_context_box_name,
-            task_context_box_id=task_context_box_id,
-            task=task
-        )
-
-        # 3 构造文件路径
-        task_file_path = REGISTERED_TASKS_PATH / f"{traceable_task.task.name}.yaml"
-
-        # 4 确保父目录存在
+        # 2 确保父目录存在
         task_file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 5 保存到 YAML 文件
+        # 3 若已有记录，则更新式写入
+        if task_file_path.exists():
+            # 读取任务记录文件
+            with open(task_file_path, 'r', encoding='utf-8') as f:
+                traceable_task = TraceableTask.from_dict(yaml.load(f, Loader=yaml.FullLoader))
+            logger.warning(f"⚠️ 任务记录文件存在: {task_file_path}")
+            logger.warning(f"⚠️ 任务记录内容: {traceable_task}")
+            traceable_task.update(new_thread_id, new_box_name, new_box_id)
+
+            logger.info(f"将更新任务记录并写入文件: {task_file_path}")
+        else:
+            logger.warning(f"⚠️ 任务记录文件不存在: {task_file_path}")
+            datasets = load_dataset(SOFTWARE_DEV_7_PATH)
+            task = datasets.task_name_to_task[task_name]
+            traceable_task = TraceableTask([new_thread_id], [new_box_name], [new_box_id], task)
+            logger.info(f"将写入以下任务记录内容: {traceable_task}")
+
+        # 4 保存到 YAML 文件
         with open(task_file_path, 'w', encoding='utf-8') as f:
             yaml.dump(traceable_task.to_dict(), f, allow_unicode=True)
             logger.info(f"✅ 任务启动记录已保存: {task_file_path}")
 
-    def green_or_brown(self, task: Task, force_using_new_thread: bool = False) -> (str, bool):
-        """判断任务是否是绿色开发，如果是，则返回新的thread_id，
-        否则若强制在旧存储盒基础上新开thread_id，则返回新的thread_id,反之返回已存在的thread_id"""
-        is_brown = False
-        task_file_path = REGISTERED_TASKS_PATH / f"{task.name}.yaml"
-        if not task_file_path.exists():
-            logger.info(f"任务记录不存在: {task_file_path}")
-            logger.info(f"将创建新的thread_id，开展绿地开发")
-            thread_id = str(uuid.uuid4())
-            self.save_traceable_task_to_file(thread_id, task)
-            return thread_id, is_brown
+    def get_thread_id(self):
+        if self.thread_id is not None:
+            return self.thread_id
+        else:
+            raise ValueError("thread_id 未初始化")
 
-        logger.info(f"任务记录已存在: {task_file_path}")
-        if force_using_new_thread:
-            logger.info(f"但是本次强制新开thread_id，将覆盖原有thread_id，开展绿地开发")
-            thread_id = str(uuid.uuid4())
-            self.save_traceable_task_to_file(thread_id, task)
-            return thread_id, is_brown
-
-        logger.info(f"将复用已有的thread_id，开展棕地开发")
-        is_brown = True
-
-        # 读取任务记录文件
-        # 读取任务记录文件
-        with open(task_file_path, 'r', encoding='utf-8') as f:
-            traceable_task = TraceableTask.from_dict(yaml.load(f, Loader=yaml.FullLoader))
-        return traceable_task.thread_id, is_brown
+    def get_is_brown(self):
+        if self.is_brown is not None:
+            return self.is_brown
+        else:
+            raise ValueError("is_brown 未初始化")
 
     # ========== 代理所有调用方法 ==========
 
     def invoke(self, input, config=None, **kwargs):
-        """同步调用 leader"""
-        if self.team_type == "simple":
-            agent: CompiledStateGraph = self.planner
-            return agent.invoke(input, config, **kwargs)
-        if self.team_type == "complex":
-            agent: CompiledStateGraph = self.leader
-            return self.leader.invoke(input, config, **kwargs)
-        raise NotImplementedError(f"不支持的 team_type: {self.team_type}")
+        """同步调用"""
+        agent: CompiledStateGraph = self.team_type_to_agent[self.team_type]
+        return agent.invoke(input, config, **kwargs)
 
     def stream(self, input, config=None, stream_mode=None, subgraphs=False, version=None, **kwargs):
-        """流式调用 leader"""
-        if self.team_type == "simple":
-            return self.planner.stream(input, config=config, stream_mode=stream_mode, subgraphs=subgraphs,
-                                       version=version, **kwargs)
-        if self.team_type == "complex":
-            return self.leader.stream(input, config=config, stream_mode=stream_mode, subgraphs=subgraphs,
-                                      version=version,
-                                      **kwargs)
-        raise NotImplementedError(f"不支持的 team_type: {self.team_type}")
+        """流式调用"""
+        agent: CompiledStateGraph = self.team_type_to_agent[self.team_type]
+        return agent.stream(input, config, stream_mode=stream_mode, subgraphs=subgraphs, version=version, **kwargs)
 
     async def ainvoke(self, input, config=None, **kwargs):
-        """异步调用 leader"""
-        if self.team_type == "simple":
-            return await self.planner.ainvoke(input, config, **kwargs)
-        if self.team_type == "complex":
-            return await self.leader.ainvoke(input, config, **kwargs)
-        raise NotImplementedError(f"不支持的 team_type: {self.team_type}")
+        """异步调用"""
+        agent: CompiledStateGraph = self.team_type_to_agent[self.team_type]
+        return await agent.ainvoke(input, config, **kwargs)
 
     async def astream(self, input, config=None, stream_mode=None, subgraphs=False, version=None, **kwargs):
-        """异步流式调用 leader"""
-        if self.team_type == "simple":
-            async for chunk in self.planner.astream(input, config=config, stream_mode=stream_mode, subgraphs=subgraphs,
-                                                    version=version, ):
-                yield chunk
-        if self.team_type == "complex":
-            async for chunk in self.leader.astream(input, config=config, stream_mode=stream_mode, subgraphs=subgraphs,
-                                                   version=version,
-                                                   **kwargs):
-                yield chunk
-        raise NotImplementedError(f"不支持的 team_type: {self.team_type}")
+        """异步流式调用"""
+        agent: CompiledStateGraph = self.team_type_to_agent[self.team_type]
+        async for chunk in agent.astream(input, config=config, stream_mode=stream_mode, subgraphs=subgraphs,
+                                         version=version,
+                                         **kwargs):
+            yield chunk

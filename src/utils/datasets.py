@@ -45,6 +45,7 @@ class SoftwareDevDataset:
     name: str = ""  # 数据集名称
     description: str = ""  # 数据集描述
     tasks: list[Task] = None  # 软件开发任务列表
+    task_name_to_task: dict[str, Task] = None
 
     @classmethod
     def from_dict(cls, data: dict):
@@ -53,7 +54,8 @@ class SoftwareDevDataset:
         return cls(
             name=data['name'],
             description=data['description'],
-            tasks=tasks
+            tasks=tasks,
+            task_name_to_task={task.name: task for task in tasks}
         )
 
 
@@ -75,26 +77,31 @@ def load_dataset(file_path) -> SoftwareDevDataset:
 @dataclass
 class TraceableTask:
     """可追踪的任务对象，用于保存任务启动记录。"""
-    thread_id: str  # dev team为完成该任务而创建的线程ID
-    task_context_box_name: str
-    task_context_box_id: str
+    thread_ids: list[str]  # dev team为完成该任务而创建的线程ID
+    task_context_box_names: list[str]
+    task_context_box_ids: list[str]
     task: Task
 
     @classmethod
     def from_dict(cls, data: dict):
         """从字典创建对象(用于 YAML 反序列化)"""
         return cls(
-            thread_id=data['thread_id'],
-            task_context_box_name=data['task_context_box_name'],
-            task_context_box_id=data['task_context_box_id'],
+            thread_ids=data['thread_ids'],
+            task_context_box_names=data['task_context_box_names'],
+            task_context_box_ids=data['task_context_box_ids'],
             task=Task.from_dict(data['task'])
         )
 
     def to_dict(self):
         """将对象转换为字典(用于 YAML 序列化)"""
         return {
-            'thread_id': self.thread_id,
-            'task_context_box_name': self.task_context_box_name,
-            'task_context_box_id': self.task_context_box_id,
+            'thread_ids': self.thread_ids,
+            'task_context_box_names': self.task_context_box_names,
+            'task_context_box_ids': self.task_context_box_ids,
             'task': self.task.to_dict()
         }
+
+    def update(self, new_thread_id, new_box_name, new_box_id):
+        self.thread_ids.append(new_thread_id)
+        self.task_context_box_names.append(new_box_name)
+        self.task_context_box_ids.append(new_box_id)

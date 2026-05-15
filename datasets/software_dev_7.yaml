@@ -1,6 +1,12 @@
 name: "software_dev_7"
 description: "The 7 tasks MetaGPT SoftwareDev Dataset"
 tasks:
+  - number: -1
+    name: "Agent test"
+    name_CN: ""
+    description: "智能体测试"
+    description_CN: "智能体测试"
+
   - number: 0
     name: "Snake game"
     name_CN: "贪吃蛇游戏"
@@ -29,7 +35,7 @@ tasks:
     name: "Tank battle game"
     name_CN: "坦克大战游戏"
     description: "Create a tank battle game."
-    description_CN: "创建一款坦克大战游戏。"
+    description_CN: "创建一款Web版坦克大战游戏。"
 
   - number: 5
     name: "Excel data process"
