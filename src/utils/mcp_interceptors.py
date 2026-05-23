@@ -223,7 +223,7 @@ class UnicodeDecodeInterceptor(ToolCallInterceptor):
         result = await handler(request)
 
         # 对结果进行解码
-        logger.info(f"开始解码MCP工具返回结果中unicode转义格式的文本")
+        logger.info(f"开始解码MCP工具返回结果中不可读的unicode编码")
         decoded_result = self._decode_unicode(result)
         logger.info(f"MCP工具返回结果解码完成")
 
@@ -358,7 +358,7 @@ class UnicodeDecodeInterceptor(ToolCallInterceptor):
         try:
             # 检查转换前打印出来的文本中是否包含 Unicode转义格式的文本
             if r'\u' not in text:
-                logger.info(f"字符串 {text} 中不存在 Unicode转义格式的文本，直接返回")
+                logger.debug(f"字符串 {text} 中不存在 Unicode转义格式的文本，直接返回")
                 return text
 
             # 使用正则表达式匹配 \uXXXX 模式并逐个解码

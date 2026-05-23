@@ -67,8 +67,8 @@ def multi_turn_conversation(agent: CompiledStateGraph | AgentTeam | AgentTeam,
         run_config: 运行配置
         sandbox: 可选的沙盒实例，用于在退出时清理资源
     """
-    if not isinstance(agent, (AgentTeam, AgentTeam)) and not sandbox:
-        raise ValueError("若提供了Agent实例（CompiledStateGraph），则务必提供相应的Sandbox实例")
+    if isinstance(agent, AgentTeam) and not sandbox:
+        raise ValueError("若提供了AgentTeam实例，则务必提供相应的Sandbox实例")
 
     printed_msg_ids = set()  # 用于记录已经输出过的消息id，避免重复输出
     try:
@@ -123,8 +123,11 @@ def multi_turn_conversation(agent: CompiledStateGraph | AgentTeam | AgentTeam,
                         # 暂停当前ReAct执行，直接继续下一次ReAct
                         break
 
-                    namespace = stream_part["ns"]
+                    namespace = stream_part[
+                        "ns"]  # namespace` is a tuple with the path to the node where a subgraph is invoked,
+                    #                               e.g. `("parent_node:<task_id>", "child_node:<task_id>")`.
                     data = stream_part["data"]
+
                     messages = data["messages"]
 
                     # 遍历所有消息，而不是只取最后一条
@@ -135,7 +138,8 @@ def multi_turn_conversation(agent: CompiledStateGraph | AgentTeam | AgentTeam,
                             if namespace:
                                 # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（新消息），
                                 # 比如是 'tools:5927c259-58a6-e7bb-c9fe-0c051e90c825'
-                                print("\n" + "=" * 33 + "👇 下面这条消息是子图的新消息\n")
+                                print(
+                                    "\n" + "=" * 33 + f"👇 下面这条消息是子图的新消息， ns={namespace} \n")
                             msg.pretty_print()
                             printed_msg_ids.add(msg.id)
                 # 判断本次ReAct循环是否完整地结束了
@@ -248,7 +252,9 @@ async def async_multi_turn_conversation(
                         # 只打印之前没打印过的新消息
                         if namespace:
                             # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（新消息），
-                            # 比如是 'tools:5927c259-58a6-e7bb-c9fe-0c051e90c825'
+                            # 比如是 直接调用的子图 'tools:UUID'，表示这个检查点属于名为 "tools" 的节点所调用的子图
+                            # 比如是 多层嵌套的子图 "outer_node:uuid|inner_node:uuid"，
+                            # "tools|ns_for_fruit_agent"表示：父图的 tools 节点 → 调用了一个子图，该子图中又有一个名为 ns_for_fruit_agent 的子图
                             print("\n" + "=" * 33 + "👇 下面这条消息是子图的新消息\n")
                         msg.pretty_print()
                 # 判断本次ReAct循环是否完整地结束了

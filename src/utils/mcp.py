@@ -16,12 +16,15 @@ def get_excluded_tools():
         "system_screenshot",
         "kill_sandbox"
     }
+
     # 与LangChain文件系统中间件重合的工具
     redundant_tools = {
         "read_file", "write_file", "edit_file", "copy_file", "move_file",
         "create_directory", "search_file", "list_directory", "read_multiple_files",
         "shell",  # 和sandbox backend提供的execute工具重合
+        "run_code"
     }
+
     too_large_returns_tools = {
         "browser_take_screenshot", "browser_snapshot",
         "page_use_screenshot", "screenshot",  # 返回大段base64编码后的字符串的工具
@@ -45,10 +48,10 @@ async def load_wuying_mcp_tools(image_id: str,
                                 mcp_tool_name_prefix: bool = True,
                                 excluded_tools: set[str] | None = None,
                                 included_tools: set[str] | None = None,
-                                enable_monitor: bool = True,
+                                enable_monitor: bool = False,  # 默认不启用监控拦截器，避免过多日志输出
                                 monitor_tool_names: set[str] | None = None,
                                 monitor_log_level: str = "INFO",
-                                decode_unicode: bool = True,
+                                decode_unicode: bool = True,  # 默认启用Unicode解码拦截器，将返回结果中的Unicode编码解码为LLM可读文本
                                 unicode_decode_tool_names: set[str] | None = None,
                                 ) -> list:
     """异步加载 Wuying MCP 服务器提供的工具。

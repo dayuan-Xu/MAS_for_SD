@@ -5,6 +5,7 @@ from langchain.agents.middleware import SummarizationMiddleware, TodoListMiddlew
 
 from src.config.llm import LLMs
 from src.config.settings import settings
+from src.custom_middleware.message_sequence_validator import MessageSequenceValidator
 from src.custom_middleware.my_middleware_prompts import MY_WRITE_TODOS_SYSTEM_PROMPT, MY_WRITE_TODOS_TOOL_DESCRIPTION
 
 # from src.config.config_logging import setup_logging
@@ -18,14 +19,16 @@ logger = logging.getLogger(__name__)
 # filesystem_middleware 应该在 DevTeamWithLinuxSandbox 中动态创建
 
 # TodoList中间件（可以共享，不依赖 sandbox）
-todo_list_middleware = TodoListMiddleware(system_prompt=MY_WRITE_TODOS_SYSTEM_PROMPT,
-                                          tool_description=MY_WRITE_TODOS_TOOL_DESCRIPTION)
+shared_todo_list_middleware = TodoListMiddleware(
+    system_prompt=MY_WRITE_TODOS_SYSTEM_PROMPT,
+    tool_description=MY_WRITE_TODOS_TOOL_DESCRIPTION
+)
 logger.debug("共享 待办事项列表中间件 TodoList 创建成功")
 
 # 总结中间件（可以共享，不依赖 sandbox）
 llm = LLMs["minimax-m2.7"] if settings.USE_PAID_LLM_API else LLMs["gpt-5-mini"]
 # pprint(vars(llm))  # 打印对象的所有字段的名称和值
-summarization_middleware = SummarizationMiddleware(
+shared_summarization_middleware = SummarizationMiddleware(
     llm,
     triger=('fraction', 0.8)
 )
@@ -78,7 +81,7 @@ def should_retry_minimax_529(exc: Exception) -> bool:
 
 
 # 官方的 ModelRetryMiddleware，但配置自定义的重试判断逻辑
-model_retry_middleware = ModelRetryMiddleware(
+shared_model_retry_middleware = ModelRetryMiddleware(
     max_retries=5,  # 最多重试 5 次
     retry_on=should_retry_minimax_529,  # ⭐ 使用自定义函数判断是否重试
     backoff_factor=2.0,  # 指数退避基数（1s → 2s → 4s → 8s → 16s）
@@ -118,5 +121,8 @@ logger.debug("共享 模型调用重试中间件 ModelRetryMiddleware (官方) �
 # - jitter=True: 启用随机抖动（±25%，避免惊群效应）
 tool_retry_middleware = ToolRetryMiddleware()
 logger.debug("共享 工具重试中间件 ToolRetryMiddleware (官方) 创建成功")
+
+shared_message_sequence_validator = MessageSequenceValidator()
+logger.debug("共享 消息序列验证中间件 MessageSequenceValidator 创建成功")
 
 logger.debug("所有共享中间件创建成功")

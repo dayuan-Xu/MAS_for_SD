@@ -177,7 +177,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
 
             separator = "=" * 80
             self.logger.info(separator)
-            self.logger.info(f"🤖 [AgentActivityMonitor] AI 响应来自：{self.agent_name}")
+            self.logger.info(f"🤖 [AgentActivityMonitor] AI Message来自：{self.agent_name}")
             self.logger.info(separator)
 
             # 记录 AI 文本内容

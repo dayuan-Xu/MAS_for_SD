@@ -1,22 +1,20 @@
 # By default, agents use AgentState to manage short term memory, specifically the conversation history via a messages key.
 # 默认情况下，代理使用 AgentState 来管理短期记忆，特别是通过消息键记录对话历史。
 
-
 # 1、可以自定义智能体的state短期记忆schema模式
 # You can extend AgentState to add additional fields.
 # Custom state schemas are passed to create_agent using the state_schema parameter.
 # 你可以扩展 AgentState 来添加额外字段。
 # 自定义状态模式通过 state_schema 参数传递给 create_agent。
 from langchain.agents import create_agent, AgentState
-from langchain.agents.middleware import wrap_tool_call, AgentMiddleware, ModelRequest, TodoListMiddleware, before_model, \
-    after_model
+from langchain.agents.middleware import wrap_tool_call, AgentMiddleware, ModelRequest
 from langchain_core.messages import AIMessageChunk
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolRuntime
 from langgraph.prebuilt.tool_node import ToolCallRequest
-from rich.pretty import pprint
 
 from src.config.llm import LLMs
+
 
 # 一个预先知道的静态工具
 @tool
@@ -33,10 +31,10 @@ class CustomAgentState(AgentState):
 @wrap_tool_call
 def check_wrap_tool_call(request, handler):
     """查看wrap_tool_call这个中间件的实参、返回值"""
-    print("check_wrap_tool_call中间件开始执行,"
-          "如果发现toolCallRequest.tool_call是在调用calculate_tip这个工具函数，"
-          "可以查看此时toolCallRequest中的tool属性是否等于calculate_tip这个工具，你会发现它的tool属性其实是None")
-    pprint(request)
+    # print("check_wrap_tool_call中间件开始执行,"
+    #       "如果发现toolCallRequest.tool_call是在调用calculate_tip这个工具函数，"
+    #       "可以查看此时toolCallRequest中的tool属性是否等于calculate_tip这个工具，你会发现它的tool属性其实是None")
+    # pprint(request)
     """
 ToolCallRequest(
 │   tool_call={
@@ -165,7 +163,7 @@ ToolCallRequest(
 │   )
 )
 """
-    pprint(handler)
+    # pprint(handler)
 
     # Execute the tool call(调用内层的处理器)
     result = handler(request)
@@ -173,7 +171,7 @@ ToolCallRequest(
     # # 打印tool_call的执行结果
     # pprint(result)
 
-    print("check_wrap_tool_call中间件执行结束")
+    # print("check_wrap_tool_call中间件执行结束")
     return result
 
 
@@ -183,6 +181,7 @@ def calculate_tip(bill_amount: float, tip_percentage: float = 20.0) -> str:
     """Calculate the tip amount for a bill."""
     tip = bill_amount * (tip_percentage / 100)
     return f"Tip: ${tip:.2f}, Total: ${bill_amount + tip:.2f}"
+
 
 @tool
 def load_skill(skill_name: str) -> str:
@@ -197,6 +196,7 @@ def load_skill(skill_name: str) -> str:
     """
     pass
 
+
 # 动态工具的添加需要在两个包裹式钩子函数内部进行相应处理。
 class DynamicToolMiddleware(AgentMiddleware):
     """Middleware that registers and handles dynamic tools."""
@@ -209,7 +209,8 @@ class DynamicToolMiddleware(AgentMiddleware):
         # Add dynamic tool to the request
         # 1、将运行时才获知的工具加入到模型调用请求中，以便让模型获知该工具的存在。
         # This could be loaded from an MCP server, database, etc.
-        pprint(request)
+        # pprint(request)
+
         """
 ModelRequest(
 │   model=ChatOpenAI(
@@ -291,7 +292,7 @@ ModelRequest(
 """
         # 扩展式重写ModelRequest对象中的tools属性
         updated = request.override(tools=[*request.tools, calculate_tip])
-        pprint(updated)
+        # pprint(updated)
         """
 ModelRequest(
 │   model=ChatOpenAI(
@@ -394,26 +395,29 @@ ModelRequest(
 agent = create_agent(
     LLMs["gpt-5-nano"],
     tools=[get_user_info],  # Only static tools registered here，运行时的动态工具无法提前获知并注册
-    middleware=[check_wrap_tool_call, DynamicToolMiddleware()],  # 对于包裹式中间件钩子(比如wrap model call和wrap tool call)，排序靠前的包在最外面
+    middleware=[check_wrap_tool_call, DynamicToolMiddleware()],
+    # 对于包裹式中间件钩子(比如wrap model call和wrap tool call)，排序靠前的包在最外面
     state_schema=CustomAgentState,
     name="带自定义middleware的账单计算员"
 )
 
-# # Custom state can be passed in invoke
-# for chunk, _ in agent.stream(
-#     input={
-#         "messages": [{"role": "user", "content": "请调用工具计算85$账单上收25%的小费，小费要收多少钱？"}],
-#         "user_id": "user_123",
-#         "preferences": {"theme": "dark"}
-#     },
-#     stream_mode = "messages"
-# ):
-#     if isinstance(chunk, AIMessageChunk):
-#         print(chunk.content, end="", flush= True)
-#     else:
-#         pprint(chunk)
+# Custom state can be passed in invoke
+for chunk, metadata in agent.stream(
+        input={
+            "messages": [{"role": "user", "content": "请调用工具计算85$账单上收25%的小费，小费要收多少钱？"}],
+            "user_id": "user_123",
+            "preferences": {"theme": "dark"}
+        },
+        stream_mode="messages"  # 仅流式输出LLM token
+):
+    if isinstance(chunk, AIMessageChunk):
+        # print(metadata)
+        if chunk.content:
+            print(chunk.content)
+        if chunk.tool_call_chunks:
+            for tool_call_chunk in chunk.tool_call_chunks:
+                print(tool_call_chunk)
 
-    # pprint(chunk)
 """
   如果直接输出生成器返回的元组，输出结果如下：
     (
@@ -442,7 +446,6 @@ agent = create_agent(
 │   }
 )
 """
-
 
 # # 2、给智能体的短期记忆加上自动总结功能
 # # To summarize message history in an agent, use the built-in SummarizationMiddleware:
@@ -481,7 +484,6 @@ agent = create_agent(
 # """
 
 
-
 # 3、查看许多内置中间件的实现源码
 """
 问：
@@ -498,55 +500,55 @@ LangChain的预构建的中间件是如何实现往create_agent方法创建的la
 ✅ 类型安全：通过 TypedDict 保持类型检查
 ✅ 向后兼容：不影响现有的 AgentState 基础功能
 """
-check1 = TodoListMiddleware
+# check1 = TodoListMiddleware
 
-
-# 4、通过中间件自定义state schema
-from langchain.agents import create_agent
-from langchain.messages import HumanMessage
-from langchain.agents.middleware import AgentState, AgentMiddleware
-from typing_extensions import NotRequired
-from typing import Any
-
-
-class CustomState(AgentState):
-    model_call_count: NotRequired[int]
-    user_id: NotRequired[str]
-
-# 注意这里继承父类时还指定了泛型参数为CustomState
-class CallCounterMiddleware(AgentMiddleware[CustomState]):
-    """The schema for state passed to the middleware nodes."""
-    state_schema = CustomState
-
-    def before_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
-        count = state.get("model_call_count", 0)
-        if count > 10:
-            return {"jump_to": "end"}
-        return None
-
-    def after_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
-        return {"model_call_count": state.get("model_call_count", 0) + 1}
-
-
-@after_model
-def my_after_model(state, runtime) -> dict[str, Any] | None:
-    # 检查state中是否存在model_call_count字段
-    pprint(state)
-    return {}
-
-agent = create_agent(
-    model=LLMs["gpt-4o-mini"],
-    middleware=[my_after_model, CallCounterMiddleware()],  # after类型的钩子函数按照传入顺序，从后往前依次运行。
-    tools=[],
-)
-
-# Invoke with custom state
-result = agent.invoke({
-    "messages": [HumanMessage("Hello")],
-    "model_call_count": 0,
-    "user_id": "user-123",
-})
-
+# # 4、通过中间件自定义state schema
+# from langchain.agents import create_agent
+# from langchain.messages import HumanMessage
+# from langchain.agents.middleware import AgentState, AgentMiddleware
+# from typing_extensions import NotRequired
+# from typing import Any
+#
+#
+# class CustomState(AgentState):
+#     model_call_count: NotRequired[int]
+#     user_id: NotRequired[str]
+#
+#
+# # 注意这里继承父类时还指定了泛型参数为CustomState
+# class CallCounterMiddleware(AgentMiddleware[CustomState]):
+#     """The schema for state passed to the middleware nodes."""
+#     state_schema = CustomState
+#
+#     def before_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
+#         count = state.get("model_call_count", 0)
+#         if count > 10:
+#             return {"jump_to": "end"}
+#         return None
+#
+#     def after_model(self, state: CustomState, runtime) -> dict[str, Any] | None:
+#         return {"model_call_count": state.get("model_call_count", 0) + 1}
+#
+#
+# @after_model
+# def my_after_model(state, runtime) -> dict[str, Any] | None:
+#     # 检查state中是否存在model_call_count字段
+#     pprint(state)
+#     return {}
+#
+#
+# agent = create_agent(
+#     model=LLMs["gpt-4o-mini"],
+#     middleware=[my_after_model, CallCounterMiddleware()],  # after类型的钩子函数按照传入顺序，从后往前依次运行。
+#     tools=[],
+# )
+#
+# # Invoke with custom state
+# result = agent.invoke({
+#     "messages": [HumanMessage("Hello")],
+#     "model_call_count": 0,
+#     "user_id": "user-123",
+# })
 
 """
 Node-style hooks  Node 风格的钩子，可以读取state和runtime，runtime包含context、store、stream writer

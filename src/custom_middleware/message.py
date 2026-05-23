@@ -3,7 +3,8 @@
 # 核心特性：
 # 1. 专家智能体编译时传入 checkpointer，实现独立的状态持久化
 # 2. 通过 CommunicateMiddleware UserAgent state中的expert_thread_ids 字典（每个thread_id可视为文件名）管理每个专家的 thread_id，
-# 同时结合checkpoint_ns（可视为文件夹）完成专家图状态的正确访问
+# 同时结合checkpoint_ns（可视为文件夹）完成专家图状态的正确访问----在不同专家应用了不同的thread id后，也有必要在执行专家时配置不同的ns！！！
+# 结合ns以表明专家智能体的检查点不属于顶层图""
 # 3. communicate 工具调用时自动检测并生成 thread_id（懒加载策略）
 # 4. 专家状态与 Leader 状态完全解耦
 # 5. 目前只有Leader Agent使用了EnhancedCommunicateMiddleware
@@ -166,8 +167,12 @@ def _build_send_message_tool(*,
     expert_name_to_graphs: dict[str, CompiledStateGraph] = {spec["name"]: spec["runnable"] for spec in expert_specs}
     expert_name_to_description_str = "\n".join(f"- {s['name']}: {s['description']}" for s in expert_specs)
 
-    # 格式化描述文本
-    description = MESSAGE_TOOL_DESCRIPTION.format(available_experts=expert_name_to_description_str)
+    # 工具名称
+    send_message_tool_name = "send_message"
+
+    # 格式化工具描述文本
+    description = MESSAGE_TOOL_DESCRIPTION.format(
+        available_experts=expert_name_to_description_str if expert_specs else "None")
 
     def _return_command_with_state_update(expert_name: str, runtime: ToolRuntime, expert_result: dict) -> Command:
         """处理专家执行结果并返回Command对象。
@@ -221,9 +226,11 @@ def _build_send_message_tool(*,
         # 构建专家输入状态（因为专家有自己的 checkpointer，只需要构建一条人类消息，不要获取其完整的最新图状态）
         # 设置消息发送者名称
         sender_name = user_name
-        private_message = (f"1. Here comes a message from {sender_name}:\n"
+        private_message = (f"1. Here comes a new message from {sender_name}:\n"
                            f"{private_message}\n"
-                           f"2. To respond to {sender_name}, just give your reply to me")
+                           f"2. Give me your response to this new message like I were {sender_name}."
+                           f"Don't call {send_message_tool_name} with the expert_name equal to {sender_name},"
+                           f"because I will relay your response to {sender_name}.")
         expert_input = {"messages": [HumanMessage(content=private_message)]}
 
         return expert, expert_input, expert_thread_id
@@ -244,7 +251,7 @@ def _build_send_message_tool(*,
         # 获取该专家的锁
         lock = expert_locks.get(expert_name)
         if not lock:
-            raise ValueError(f"Expert '{expert_name}' not found in locks")
+            raise ValueError(f"Expert '{expert_name}' not found in your contacts list")
 
         # 尝试非阻塞获取锁，如果失败说明有并发调用，直接返回错误
         acquired = lock.acquire(blocking=False)
@@ -269,7 +276,7 @@ def _build_send_message_tool(*,
             expert, expert_input, expert_thread_id = _validate_and_prepare_call(expert_name, private_message,
                                                                                 runtime)
 
-            logger.debug(f"开始执行专家 {expert_name}")
+            logger.debug(f"开始执行专家 {expert_name} (thread_id: {expert_thread_id})")
 
             # 关键：构建专家的配置，传入其专属的 thread_id 和 checkpoint_ns
             expert_config = {
@@ -277,8 +284,8 @@ def _build_send_message_tool(*,
                 "tags": runtime.config["tags"] + [f"{expert_name}"],
                 "configurable": {
                     **runtime.config.get("configurable", {}),
-                    "thread_id": expert_thread_id,  # 覆盖为专家的 thread_id
-                    "checkpoint_ns": f"expert:{expert_name}"  # 为每个专家设置独立的 namespace
+                    "thread_id": expert_thread_id,  # 覆盖为专家智能体自己的 thread_id
+                    "checkpoint_ns": f"expert_{expert_name}"  # 必要，为每个专家设置独立的 namespace
                 },
             }
 
@@ -286,7 +293,7 @@ def _build_send_message_tool(*,
             expert_result = expert.invoke(expert_input, config=expert_config)
 
             logger.debug(
-                f"专家智能体 {expert_name} 任务执行完成，将提取其最后一条不包含工具调用的AIMessage返回给主调智能体")
+                f"专家智能体 {expert_name} 执行完成，将提取其最后一条不包含工具调用的AIMessage返回给主调智能体")
 
             return _return_command_with_state_update(expert_name, runtime, expert_result)
         except Exception as e:
@@ -319,7 +326,7 @@ def _build_send_message_tool(*,
         # 获取该专家的 asyncio 锁
         lock = expert_async_locks.get(expert_name)
         if not lock:
-            raise ValueError(f"Expert '{expert_name}' not found in async locks")
+            raise ValueError(f"Expert '{expert_name}' not found in your contacts list")
 
         # 尝试获取锁，如果锁已被占用，说明有并发调用
         try:
@@ -341,7 +348,7 @@ def _build_send_message_tool(*,
         try:
             expert, expert_input, expert_thread_id = _validate_and_prepare_call(expert_name, private_message,
                                                                                 runtime)
-            logger.debug(f"开始异步执行专家 {expert_name} 的任务 (thread_id: {expert_thread_id})...")
+            logger.debug(f"开始异步执行专家 {expert_name} (thread_id: {expert_thread_id})...")
 
             # 构建专家的配置，传入其专属的 thread_id 和 checkpoint_ns
             expert_config = {
@@ -349,15 +356,15 @@ def _build_send_message_tool(*,
                 "tags": runtime.config["tags"] + [f"{expert_name}"],
                 "configurable": {
                     **runtime.config.get("configurable", {}),
-                    "thread_id": expert_thread_id,  # 覆盖为专家的 thread_id
-                    "checkpoint_ns": f"expert:{expert_name}"  # 为每个专家设置独立的 namespace，使其检查点独立于主调智能体
+                    "thread_id": expert_thread_id,  # 覆盖为专家智能体自己的 thread_id
+                    "checkpoint_ns": f"expert_{expert_name}"  # 必要，为每个专家设置独立的 namespace
                 },
             }
 
             # 异步调用专家，专家会根据 thread_id 自动持久化到自己的 checkpointer
             expert_result: dict = await expert.ainvoke(expert_input, config=expert_config)
 
-            logger.debug(f"专家 {expert_name} 异步任务执行完成 (thread_id: {expert_thread_id})")
+            logger.debug(f"专家 {expert_name} 执行完成 (thread_id: {expert_thread_id})")
 
             # 缺陷是：
             # 若程序在 expert.ainvoke() 执行过程中被强行终止，而且本次执行该专家之前是新建了expert_thread_id而不是复用已有的expert thread id，
@@ -367,7 +374,7 @@ def _build_send_message_tool(*,
             # 每次send message调用应该仅仅返回ToolMessage到主调智能体的状态中
             return _return_command_with_state_update(expert_name, runtime, expert_result)
         except Exception as e:
-            logger.error(f"专家智能体 {expert_name} 异步执行过程中出现异常: {e}", exc_info=True)
+            logger.error(f"专家智能体 {expert_name} 执行过程中出现异常: {e}", exc_info=True)
             return Command(
                 update={
                     "messages": [ToolMessage(
@@ -381,7 +388,7 @@ def _build_send_message_tool(*,
             lock.release()
 
     return StructuredTool.from_function(
-        name="send_message",
+        name=send_message_tool_name,
         func=send_message,
         coroutine=asend_message,
         description=description,
@@ -446,7 +453,7 @@ class CommunicateMiddleware(AgentMiddleware[CommunicateState, ContextT, Response
         # 构建系统提示词
         if system_prompt and self.expert_specs:
             experts_desc = "\n".join(f"- {s['name']}: {s['description']}" for s in self.expert_specs)
-            self.system_prompt = system_prompt + "\n\nAvailable experts:\n" + experts_desc
+            self.system_prompt = system_prompt + "\n\nAvailable contacts:\n" + experts_desc
         else:
             self.system_prompt = system_prompt
 

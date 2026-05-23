@@ -16,7 +16,7 @@ from src.paths import LOG_PATH, LOCAL_WAREHOUSE_PATH
 experiment_logger = logging.getLogger("experiment_statistics")
 
 
-def setup_experiment_logging():
+def setup_experiment_logging(team_type):
     """设置实验统计日志。
     """
     # 确保日志目录存在
@@ -25,7 +25,7 @@ def setup_experiment_logging():
     # 生成日志文件名（包含时间戳和实验类型）
     # timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
     timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
-    log_filename = f"experiment_{timestamp}.log"
+    log_filename = f"{team_type}_team_{timestamp}.log"
     log_file_path = LOG_PATH / log_filename
 
     # 配置实验日志器
@@ -51,6 +51,7 @@ def setup_logging(
         backup_count: int = 3,
         console_output: bool = True,
         task_name: str | None = None,  # 新增：任务名称参数
+        team_type: str | None = None,  # 新增：团队类型参数（用于日志路径区分）
         log_dir: str | None = None,  # 新增：自定义日志目录
 ):
     """
@@ -72,9 +73,9 @@ def setup_logging(
         # timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M")
         timestamp = datetime.datetime.now().strftime("%m%d_%H%M")
         if task_name == "Agent test":
-            task_log_dir = LOG_PATH / "Agent test" / f"logs_{timestamp}"
+            task_log_dir = LOG_PATH / "Agent test" / f"{team_type}_team_logs_{timestamp}"
         else:
-            task_log_dir = LOCAL_WAREHOUSE_PATH / task_name / f"logs_{timestamp}"
+            task_log_dir = LOCAL_WAREHOUSE_PATH / task_name / f"{team_type}_team_logs_{timestamp}"
 
         # 直接使用固定的日志文件名（路径已包含任务信息）
         app_log_file = "app.log"
