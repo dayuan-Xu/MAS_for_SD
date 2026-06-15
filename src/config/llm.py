@@ -99,7 +99,7 @@ gpt35_turbo = ChatOpenAI(
 
 minimax_m27 = ChatOpenAI(
     model="MiniMax-M2.7",
-    temperature=1.0,
+    temperature=0.3,  # 1.0导致智能体的行为不会严格遵守系统提示词，ChatDev使用0.2，
     # max_tokens=4096,  # 直接省略，"让模型自己决定用多少"
     timeout=180,  # 增加到 180 秒，给 MiniMax 更多响应时间
     max_retries=5,  # 增加到 5 次，配合 RetryMiddleware 使用

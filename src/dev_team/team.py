@@ -2,7 +2,6 @@ import datetime
 import logging
 import uuid
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from agentbay import AgentBay
@@ -21,6 +20,7 @@ from src.custom_middleware.agent_activity_monitor import AgentActivityMonitor
 from src.custom_middleware.message import create_compiled_expert_agent, CommunicateMiddleware
 from src.custom_middleware.my_skills import MySkillsMiddleware
 from src.custom_middleware.prompt_inject import SystemPromptInjectMiddleware
+from src.custom_middleware.unicode_encode_error_handler import UnicodeEncodeErrorHandlerMiddleware
 from src.dev_team.my_backend import LinuxSandboxBackend
 from src.dev_team.shared_middles import shared_todo_list_middleware, shared_summarization_middleware, \
     tool_retry_middleware, \
@@ -28,7 +28,7 @@ from src.dev_team.shared_middles import shared_todo_list_middleware, shared_summ
 from src.dev_team.team_config import LEADER_SKILL_PATH, ENGINEER_SKILL_PATH, QA_ENGINEER_SKILL_PATH, \
     MY_COMPOSITE_BACKEND_ROUTES, MY_FILESYSTEM_MIDDLEWARE_SYSTEM_PROMPT, \
     MY_WRITE_FILE_TOOL_DESCRIPTION, AGENTBAY_MCP_SERVER_NAME, BUILDER_SKILL_PATH, EVALUATOR_SKILL_PATH, \
-    SHARED_INFORMATION_AFTER_SYSTEM_PROMPT, MY_EXECUTE_TOOL_DESCRIPTION, EXCEPTION_IDENTIFIER
+    SHARED_INFORMATION_AFTER_SYSTEM_PROMPT, MY_EXECUTE_TOOL_DESCRIPTION, EXCEPTION_IDENTIFIER, TeamType
 from src.paths import LOCAL_WAREHOUSE_PATH, \
     REGISTERED_TASKS_PATH, SOFTWARE_DEV_7_PATH, PROMPTS_DIR
 from src.utils.datasets import TraceableTask, load_dataset
@@ -41,9 +41,10 @@ logger = logging.getLogger(__name__)
 class AgentTeam:
     """基于 AgentBay 的自动化软件开发团队。"""
 
-    def __init__(self, *, task_name: str = "",
+    def __init__(self, *,
+                 task_name: str = "",
                  local_warehouse_path: Path = LOCAL_WAREHOUSE_PATH,
-                 team_type: Literal["single", "dual", "simple"] = "simple",
+                 team_type: TeamType | str = TeamType.SIMPLE,
                  enable_brown: bool = False):
         """初始化开发团队同步资源
         
@@ -56,8 +57,11 @@ class AgentTeam:
             team_type: 团队类型
         """
 
-        if team_type not in ["single", "dual", "simple", "complex"]:
-            raise NotImplementedError(f"AgentTeam 不支持当前的team_type = {team_type}")
+        if isinstance(team_type, str):
+            team_type = TeamType(team_type)
+
+        if team_type not in TeamType:
+            raise ValueError(f"无效的团队类型: {team_type}")
 
         self.task_name = task_name
         self.local_warehouse_path = local_warehouse_path
@@ -207,7 +211,7 @@ class AgentTeam:
     async def create_with_agentbay_mcp(cls,
                                        task_name: str,
                                        local_warehouse: Path = LOCAL_WAREHOUSE_PATH,
-                                       team_type: Literal["single", "dual", "simple"] = "simple",
+                                       team_type: TeamType | str = TeamType.SIMPLE,
                                        enable_brown: bool = False):
         """异步工厂方法：创建带有 Wuying AgentBay MCP 工具的 AgentTeam 实例。
 
@@ -237,7 +241,7 @@ class AgentTeam:
         # 创建所有智能体
         instance._create_all_agents()
 
-        logger.info("✅ AgentTeam 初始化完成")
+        logger.info("✅ AgentTeam实例 初始化完成")
         logger.info(f"{instance}")
         return instance
 
@@ -272,11 +276,11 @@ class AgentTeam:
     def _create_all_agents(self):
         """创建所有智能体"""
         # 创建简化版三人团队（Planner/Builder/Evaluator）
-        logger.info("开始创建简化版三人团队...")
+        logger.info("开始创建多智能体团队...")
         self.evaluator = self._create_evaluator(use_mcp=True, log_agent_activity=True)
         self.builder = self._create_builder(use_mcp=True, log_agent_activity=True)
-        self.planner = self._create_planner()
-        logger.info("✅ 简单3人团队创建完成")
+        self.planner = self._create_planner(log_agent_activity=True)
+        logger.info("✅ 多智能体（Alice、Bob、Eva创建完成，三者均添加了活动监控中间件")
 
         self.agents = [self.planner, self.builder, self.evaluator]
 
@@ -291,8 +295,6 @@ class AgentTeam:
             "dual": self.builder,
             "simple": self.planner,
         }
-
-        logger.info("✅ 所有智能体创建完成")
 
     def _create_planner(self, *, use_mcp=False, log_agent_activity=False):
         """创建 Planner Alice（简化版三人团队）"""
@@ -309,6 +311,7 @@ class AgentTeam:
         tools = [get_current_time, internet_search] + self.mcp_tools if use_mcp else []
 
         middlewares = [
+            UnicodeEncodeErrorHandlerMiddleware(),
             shared_message_sequence_validator,
             self.injected_prompt_middleware_1,
             shared_todo_list_middleware,
@@ -350,6 +353,7 @@ class AgentTeam:
         tools = [get_current_time, internet_search] + self.mcp_tools if use_mcp else []
 
         middlewares = [
+            UnicodeEncodeErrorHandlerMiddleware(),
             shared_message_sequence_validator,
             self.injected_prompt_middleware_1,
             shared_todo_list_middleware,
@@ -383,6 +387,7 @@ class AgentTeam:
         tools = [get_current_time, internet_search] + self.mcp_tools if use_mcp else []
 
         middlewares = [
+            UnicodeEncodeErrorHandlerMiddleware(),
             shared_message_sequence_validator,
             self.injected_prompt_middleware_1,
             shared_todo_list_middleware,
@@ -521,6 +526,6 @@ class AgentTeam:
 
         # 如果有异常，记录但不吞掉
         if exc_type:
-            logger.error(f"❌ AgentTeam 运行期间发生错误: {exc_val}", exc_info=True)
+            logger.error(f"❌ AgentTeam 运行期间发生出现异常。", exc_info=True)
 
         return False  # 不吞掉异常

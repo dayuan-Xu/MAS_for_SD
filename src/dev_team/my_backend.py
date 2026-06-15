@@ -10,7 +10,7 @@ from pathlib import Path
 
 from agentbay import AgentBay, CreateSessionParams, SessionResult, ContextSync, CommandResult, \
     UploadResult, DownloadResult
-from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse
+from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse, FileOperationError
 from deepagents.backends.protocol import ReadResult, FileData
 from deepagents.backends.sandbox import BaseSandbox
 from deepagents.backends.utils import _get_file_type
@@ -464,6 +464,8 @@ class LinuxSandboxBackend(BaseSandbox):
 
                 # 将 AgentBay 错误映射到标准 FileOperationError
                 standardized_error = map_agentbay_error_to_file_operation_error(error_msg)
+                if not isinstance(standardized_error, FileOperationError):
+                    standardized_error = error_msg
                 responses.append(FileUploadResponse(
                     path=file_path,
                     error=standardized_error
@@ -517,6 +519,8 @@ class LinuxSandboxBackend(BaseSandbox):
 
                 # 将 AgentBay 错误映射到标准 FileOperationError
                 standardized_error = map_agentbay_error_to_file_operation_error(error_msg)
+                if not isinstance(standardized_error, FileOperationError):
+                    standardized_error = error_msg
                 responses.append(FileDownloadResponse(
                     path=file_path,
                     error=standardized_error

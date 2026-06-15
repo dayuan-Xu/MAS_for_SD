@@ -107,7 +107,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
             separator = "=" * 80
             self.logger.info(separator)
             self.logger.info(
-                f"🛠️ [AgentActivityMonitor] 工具执行详情(共 {len(tool_messages)} 个工具) 调用者：{self.agent_name}")
+                f"🛠️ 工具执行详情(共 {len(tool_messages)} 个工具)，调用者：{self.agent_name}")
             self.logger.info(separator)
 
             # 处理每个工具执行结果
@@ -177,7 +177,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
 
             separator = "=" * 80
             self.logger.info(separator)
-            self.logger.info(f"🤖 [AgentActivityMonitor] AI Message来自：{self.agent_name}")
+            self.logger.info(f"🤖 AI Message来自：{self.agent_name}")
             self.logger.info(separator)
 
             # 记录 AI 文本内容
@@ -199,7 +199,7 @@ class AgentActivityMonitor(AgentMiddleware[AgentState]):
 
         except Exception as e:
             # 记录失败不应阻断正常流程
-            self.logger.warning(f"⚠️ [AgentActivityMonitor] after_model 记录 AI 响应失败: {e}", exc_info=True)
+            self.logger.warning(f"⚠️ 记录 AI 响应失败: {e}", exc_info=True)
 
         return None
 

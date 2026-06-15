@@ -1,7 +1,39 @@
 # 本模块保存agentbay based agent的一些配置信息
+from enum import StrEnum
+
 from deepagents.backends import FilesystemBackend
 
 from src.paths import AGENT_RESOURCES_PATH
+
+
+class TeamType(StrEnum):
+    """智能体团队类型枚举
+
+    Attributes:
+        SIMPLE: 简单团队模式 - 基础协作流程
+        DUAL: 双代理模式 - Builder + Evaluator 协作
+        SINGLE: 单代理模式 - 独立完成任务
+    """
+    SIMPLE = "simple"
+    DUAL = "dual"
+    SINGLE = "single"
+
+    @property
+    def description(self) -> str:
+        """返回团队类型的描述"""
+        descriptions = {
+            self.SIMPLE: "简单团队模式",
+            self.DUAL: "双代理协作模式",
+            self.SINGLE: "单代理独立模式",
+        }
+        return descriptions[self]
+
+
+class SandboxType(StrEnum):
+    """沙盒环境类型枚举"""
+    LINUX = "linux"
+    WINDOWS = "windows"
+
 
 AGENT_SKILL_PATH = AGENT_RESOURCES_PATH / "skills"
 AGENT_MEMORY_PATH = AGENT_RESOURCES_PATH / "memory"
@@ -80,7 +112,7 @@ MY_FILESYSTEM_MIDDLEWARE_SYSTEM_PROMPT = """## 遵循规范
 
 ## 执行工具 `execute`
 
-你可以使用 `execute` 工具在沙箱环境中运行 Shell 命令，linux下的shell一般为Bash，windows下的shell为一般为CMD，已知当前沙盒环境为{sandbox_type}。
+你可以使用 `execute` 工具在沙箱环境中运行 Shell 命令，linux下的shell一般为/bin/sh，windows下的shell为一般为CMD，已知当前沙盒环境为{sandbox_type}。
 使用该工具运行指令、脚本、测试、构建操作及其他 Shell 相关任务。
 
 - execute：在当前沙箱中运行 Shell 命令（返回stdout+stderr与退出码）"""
@@ -183,13 +215,13 @@ AGENTBAY_IMAGE_ID = "imgc-0aae4rgke8zkhucji"
 AGENTBAY_MCP_SERVER_NAME = "sandbox"
 
 SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = {
-    # 3人团队
+    # 3智能体团队
     "simple": """
-## 团队成员
-1. 当前团队人数：3
-2. Planner Alice：负责用户原始需求接收，创建SOFTWARE_DEFINITION.md、TASKS.md，以及指派Builder Bob进行软件功能点开发；仅能和用户、Bob交互。
-3. Builder Bob：负责从Alice处接收软件功能点开发请求，实现软件功能点；仅能和Alice、Eva交互。
-4. Evaluator Eva：负责评审Bob对每个软件功能点提出的验收标准提议和其具体实现；仅能和Bob交互。
+## 智能体团队
+1. 当前智能体团队成员数：3
+2. Planner Alice：负责人类用户原始需求接收，创建SOFTWARE_DEFINITION.md、TASKS.md，以及指派Builder Bob进行软件功能点开发；可通信对象：人类用户、Bob。
+3. Builder Bob：负责从Alice处接收软件功能点开发请求，实现软件功能点；可通信对象：Alice、Eva。
+4. Evaluator Eva：负责评审Bob对每个软件功能点提出的验收标准提议和其具体实现；可通信对象：Bob。
 
 ## 团队工作环境 
 1. 已知每次团队进行软件开发任务的环境，是一个具备图形化界面的计算机沙箱。
@@ -222,12 +254,12 @@ SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = {
 3. 若出现“沙盒会话即将达到最大运行时间限制！”情况，工作中的Eva应该停止工作并向Bob汇报，工作中的Bob应该停止工作并向Alice汇报，工作中的Alice应该停止工作并向用户汇报"{exception_identifier}：沙盒会话已经断开"。
 """,
 
-    # 双人团队
+    # 双智能体团队
     "dual": """
-## 团队成员
-1. 当前团队人数：2
-2. Builder Bob：负责接收用户软件开发请求，定义和实现软件功能点；仅能和用户、Eva交互。
-3. Evaluator Eva：负责评审Bob对每个软件功能点提出的验收标准提议和其具体实现；仅能和Bob交互。
+## 智能体团队
+1. 当前智能体团队成员数：2
+2. Builder Bob：负责接收用户软件开发请求，定义和实现软件功能点；可通信对象：人类用户、Eva。
+3. Evaluator Eva：负责评审Bob对每个软件功能点提出的验收标准提议和其具体实现；可通信对象：Bob。
 
 ## 团队工作环境 
 1. 已知每次团队进行软件开发任务的环境，是一个具备图形化界面的计算机沙箱。
@@ -246,6 +278,10 @@ SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = {
 ├── tests/             # 测试代码目录
 └── README.md          # 项目说明文档
 
+## 特殊文件
+- `/tmp/persistent/agent_workspace/warehouse/{{project_name}}/docs/SOFTWARE_DEFINITION.md`用于记录用户原始需求和软件整体功能定义，仅由Bob创建，其他成员只读不能写！
+- `/tmp/persistent/agent_workspace/warehouse/{{project_name}}/docs/TASKS.md`用于定义软件功能点列表，由Bob负责创建（创建后只能读不能写），由Eva负责维护（更新）每个功能点状态。
+
 
 ## 工具使用原则
 1. 绝不调用那些会返回无法解读信息的工具，尤其是snapshot、screenshot这类返回base64编码字符串的截图工具，避免摄入大量无用信息。
@@ -256,11 +292,12 @@ SHARED_INFORMATION_AFTER_SYSTEM_PROMPT = {
 2. 若当前sandbox id为None，则应该主动汇报"{exception_identifier}：沙盒ID异常，拒绝继续执行"。
 3. 若出现“沙盒会话即将达到最大运行时间限制！”情况，工作中的Eva应该停止工作并向Bob汇报，工作中的Bob应该停止工作并向用户汇报"{exception_identifier}：沙盒会话已经断开"。
 """,
-    # 单人团队
+
+    # 单智能体
     "single": """
-## 团队成员
-1. 当前团队人数：1
-2. Builder Bob：负责接收用户软件开发请求，定义软件功能点，实现和评审软件功能点实现；仅能和用户交互。
+## 智能体团队
+1. 当前智能体团队成员数：1
+2. Builder Bob：负责接收用户软件开发请求，定义软件功能点，实现和自测软件功能点实现。可通信对象：人类用户。
 
 ## 团队工作环境 
 1. 已知每次团队进行软件开发任务的环境，是一个具备图形化界面的计算机沙箱。

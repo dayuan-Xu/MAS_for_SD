@@ -22,7 +22,8 @@ def get_excluded_tools():
         "read_file", "write_file", "edit_file", "copy_file", "move_file",
         "create_directory", "search_file", "list_directory", "read_multiple_files",
         "shell",  # 和sandbox backend提供的execute工具重合
-        "run_code"
+        "run_code",
+        "start_ChromeByCDP", "stopChrome",  # Chrome DevTools Protocol相关工具，功能太过低级，不如browser use封装的 playright 工具
     }
 
     too_large_returns_tools = {

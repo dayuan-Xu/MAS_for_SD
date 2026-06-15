@@ -65,7 +65,8 @@ class Settings(BaseSettings):
 settings = Settings()
 logger.info("全局静态配置settings已加载！")
 logger.info("当前LLM API配置：" + "minimax" if settings.USE_PAID_LLM_API else "chatanywhere")
-logger.info("当前checkpointer配置：" + "Postgres checkpointer" if settings.USE_POSTGRES_CHECKPOINTER else "Memory")
+logger.info("当前checkpointer配置：" + (
+    "Postgres checkpointer" if settings.USE_POSTGRES_CHECKPOINTER else "Memory checkpointer"))
 
 # pprint.info(settings.model_dump())
 

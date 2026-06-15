@@ -223,9 +223,7 @@ class UnicodeDecodeInterceptor(ToolCallInterceptor):
         result = await handler(request)
 
         # 对结果进行解码
-        logger.info(f"开始解码MCP工具返回结果中不可读的unicode编码")
         decoded_result = self._decode_unicode(result)
-        logger.info(f"MCP工具返回结果解码完成")
 
         return decoded_result
 
@@ -361,6 +359,8 @@ class UnicodeDecodeInterceptor(ToolCallInterceptor):
                 logger.debug(f"字符串 {text} 中不存在 Unicode转义格式的文本，直接返回")
                 return text
 
+            logger.debug(f"开始解码MCP工具返回结果中不可读的unicode转义格式的文本")
+
             # 使用正则表达式匹配 \uXXXX 模式并逐个解码
             def replace_unicode_escape(match):
                 """将匹配的 \\uXXXX文本 转换为对应的 Unicode 字符"""
@@ -374,7 +374,7 @@ class UnicodeDecodeInterceptor(ToolCallInterceptor):
 
             # 匹配 \uXXXX 模式的文本（4个十六进制数字）
             decoded = re.sub(r'\\u([0-9a-fA-F]{4})', replace_unicode_escape, text)
-            logger.debug(f"Unicode转义格式的文本转换成功: {text} -> {decoded}")
+            logger.info(f"MCP工具返回结果中Unicode转义格式的文本转换成功: {text} -> {decoded}")
             return decoded
 
         except Exception as e:

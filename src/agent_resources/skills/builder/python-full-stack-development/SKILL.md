@@ -20,10 +20,10 @@ metadata:
 
 在开始任何 Python 项目之前，**必须**创建独立的虚拟环境以避免依赖冲突。
 
-#### 推荐方法：使用 venv
+#### 推荐使用 venv创建项目虚拟环境
 
 ```bash
-# 在项目根目录创建虚拟环境
+# 在项目根目录执行，以创建虚拟环境
 python3 -m venv .venv
 
 # 激活虚拟环境
@@ -34,24 +34,17 @@ source .venv/bin/activate
 .venv\Scripts\activate
 ```
 
-### 2. 配置国内镜像源
+### 2. 使用国内镜像源
 
-为避免从 PyPI 官方源下载时的超时问题，**必须**配置国内镜像源。
+为避免从 PyPI 官方源下载时的超时问题，**必须**使用国内镜像源。
 
 #### 单次安装直接使用-i参数（安装前确保激活项目虚拟环境）
 
 ```bash
-# 阿里云镜像（推荐，速度快且稳定）
-pip install <package_name> -i https://mirrors.aliyun.com/pypi/simple/
 
-# 清华大学镜像
+# 清华大学镜像（推荐优先使用）
 pip install <package_name> -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 中国科技大学镜像
-pip install <package_name> -i https://pypi.mirrors.ustc.edu.cn/simple
-
-# 豆瓣镜像
-pip install <package_name> -i https://pypi.douban.com/simple
 ```
 
 
@@ -61,9 +54,9 @@ pip install <package_name> -i https://pypi.douban.com/simple
 
 ```bash
 # 使用国内镜像源安装所有依赖
-pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 如果已有永久配置，直接运行
+# 若已永久配置国内镜像源，直接运行
 pip install -r requirements.txt
 ```
 
@@ -91,8 +84,8 @@ ERROR: No matching distribution found for xxx
 
 **解决方案：**
 ```bash
-# 使用镜像源并增加超时时间并
-pip install <package> -i https://mirrors.aliyun.com/pypi/simple/ --timeout 300
+# 使用镜像源并增加超时时间
+pip install <package> -i https://pypi.tuna.tsinghua.edu.cn/simple --timeout 300
 ```
 
 #### 问题 2：SSL 证书错误
@@ -105,7 +98,7 @@ SSLError: HTTPSConnectionPool(host='pypi.org', port=443): Max retries exceeded
 **解决方案：**
 ```bash
 # 使用可信主机参数
-pip install <package> -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com
+pip install <package> -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
 ```
 
 #### 问题 3：依赖冲突
@@ -153,11 +146,14 @@ source .venv/bin/activate  # Linux/macOS
    source .venv/bin/activate
    ```
 
-2. **始终使用国内镜像源**
-   - 优先使用阿里云镜像：`https://mirrors.aliyun.com/pypi/simple/`
-   - 备选清华镜像：`https://pypi.tuna.tsinghua.edu.cn/simple`
+2. **在国内开发 Python 项目时，始终使用国内镜像源**
+   - 优先使用清华镜像：`https://pypi.tuna.tsinghua.edu.cn/simple`
+   - 备选镜像：
+     -  中国科技大学镜像：https://pypi.mirrors.ustc.edu.cn/simple
+     -  阿里云镜像：https://mirrors.aliyun.com/pypi/simple/
+     -  豆瓣镜像：https://pypi.douban.com/simple
 
-3. **锁定依赖版本方便他人复现**
+3. **项目完成后锁定依赖版本，方便他人复现**
    ```bash
    # 使用精确版本号
    pip freeze > requirements.txt
@@ -171,7 +167,9 @@ source .venv/bin/activate  # Linux/macOS
 - 关键逻辑添加注释
 - 适当的错误处理
 - 避免硬编码，使用常量或配置
-- 代码通过运行来Debug
+
+5. **使用模快方式运行代码**
+- 避免运行代码时直接使用脚本文件路径，而是使用模块方式运行，即python -m 模块路径
 
 #### ❌ 避免的做法
 
@@ -179,7 +177,3 @@ source .venv/bin/activate  # Linux/macOS
 2. **不要在全局环境安装项目依赖** - 使用虚拟环境
 3. **不要忽略 requirements.txt** - 确保项目可复现
 4. **不要从官方源直接下载大Package** - 使用国内镜像
-
----
-
-**提示：** 在国内开发 Python 项目时，始终优先考虑使用国内镜像源，可以显著提升包安装速度并避免超时问题。

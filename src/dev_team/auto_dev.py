@@ -74,7 +74,7 @@ async def multi_react_loop(task: Task,
     is_brown = dev_team.is_brown
 
     config_across_react_loop: RunnableConfig = {
-        "tags": [f"{task_name}"],
+        "tags": [f"{task_name}", f"{dev_team.team_type}"],
         "recursion_limit": recursion_limit,
         "configurable": {
             "thread_id": thread_id,
@@ -112,15 +112,17 @@ async def multi_react_loop(task: Task,
             if should_break:
                 break
 
-            # input_text = f"用户无暇亲临指导，请确保软件符合原始需求并可交付，否则继续开发。若当前软件已可交付则仅仅回复'{TASK_DONE_IDENTIFIER}'"
-            input_text = f"若当前软件已经完成“基础版”下所有软件功能点的开发，则仅回复'{TASK_DONE_IDENTIFIER}'"
+            if dev_team.team_type == "simple":
+                input_text = f"若当前软件已经完成“基础版”下所有软件功能点的开发，则仅回复'{TASK_DONE_IDENTIFIER}'，否则继续开发。"
+            else:
+                input_text = f"若当前软件已满足原始需求，则仅仅回复'{TASK_DONE_IDENTIFIER}'，否则继续开发。"
 
         dev_input = {"messages": [{"role": "user", "content": input_text}]}
 
         current_timestamp = datetime.datetime.now().strftime("%H:%M")
         run_config = {
             **config_across_react_loop,
-            "run_name": f'{task_name}_{react_loop_count}_{current_timestamp}'
+            "run_name": f'{task_name}_{react_loop_count} {current_timestamp}'
         }
 
         logger.info("=" * 41)
@@ -179,8 +181,7 @@ async def auto_dev(task: Task, team_type, enable_brown=False):
     except Exception as e:
         if "沙盒会话已被主动提前断开" in str(e) or "沙盒会话即将达到最大运行时间限制" in str(e):
             # 捕获并打印异常
-            logger.error(f"❌ 本次软件开发任务运行时间过长，沙盒自动释放了，任务 '{task.name}' 执行失败: {e}",
-                         exc_info=True)
+            logger.error(f"❌ 本次软件开发任务{task.name}运行时间过长，沙盒自动释放了。", exc_info=True)
             return {'task_name': task.name, 'success': False, 'elapsed_time': time.time() - start_time}
         else:
             raise e

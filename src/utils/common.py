@@ -183,8 +183,10 @@ def map_agentbay_error_to_file_operation_error(error_message: str) -> FileOperat
     ]):
         return "invalid_path"
 
-    # 默认返回 file_not_found（最常见的错误）
-    logger.error(f"无法映射错误信息到 FileOperationError。错误信息：\n{error_message}")
+    # 无法解析的错误
+    logger.error(f"\n无法映射错误信息到 FileOperationError。\n"
+                 f"错误信息如下：\n"
+                 f"{error_message}")
     return "File operation error parse failure"
 
 

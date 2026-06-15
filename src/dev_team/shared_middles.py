@@ -14,10 +14,6 @@ from src.custom_middleware.my_middleware_prompts import MY_WRITE_TODOS_SYSTEM_PR
 
 logger = logging.getLogger(__name__)
 
-# ⚠️ 注意：文件系统中间件不再在模块级别创建
-# 因为 FilesystemMiddleware 需要依赖具体的 sandbox 实例
-# filesystem_middleware 应该在 DevTeamWithLinuxSandbox 中动态创建
-
 # TodoList中间件（可以共享，不依赖 sandbox）
 shared_todo_list_middleware = TodoListMiddleware(
     system_prompt=MY_WRITE_TODOS_SYSTEM_PROMPT,
@@ -77,50 +73,28 @@ def should_retry_minimax_529(exc: Exception) -> bool:
         logger.warning(f"🔄 检测到网络错误，将重试")
         return True
 
+    logger.error(f"model call retry 遇到未知错误，将不对该错误类型重试model call，请查看日志检查错误详情")
+    logger.error(f"❌ model call 遇到的未知错误的名称: {type(exc).__name__}")
+    logger.error(f"model call 遇到的未知错误的具体信息: {str(exc)}")
+
     return False
 
 
-# 官方的 ModelRetryMiddleware，但配置自定义的重试判断逻辑
+# ModelRetryMiddleware，配置自定义的重试判断逻辑
 shared_model_retry_middleware = ModelRetryMiddleware(
-    max_retries=5,  # 最多重试 5 次
-    retry_on=should_retry_minimax_529,  # ⭐ 使用自定义函数判断是否重试
-    backoff_factor=2.0,  # 指数退避基数（1s → 2s → 4s → 8s → 16s）
-    initial_delay=2.0,  # 首次等待 2 秒
-    max_delay=60.0,  # 最长等待 60 秒
-    jitter=True,  # 启用随机抖动（±25%，避免惊群效应）
-    on_failure='continue',  # 失败后返回 AIMessage，让智能体继续
+    retry_on=should_retry_minimax_529,  # 使用自定义函数判断是否为可重试的异常
+    # on_failure='continue',  # when all retries are exhausted, return an `AIMessage` with error details, allowing the agent to continue with an error response.
+    on_failure='error',  # when all retries are exhausted, re-raise the exception, stopping agent execution.
 )
-logger.debug("共享 模型调用重试中间件 ModelRetryMiddleware (官方 + MiniMax 529 支持) 创建成功")
+logger.debug("共享 模型调用重试中间件 ModelRetryMiddleware (自动识别可重试的异常) 创建成功")
 
-# 共享的重试中间件实例（可以共享，不依赖 sandbox）
-# 配置说明：
-# - max_retries=5: 最多重试5次（应对临时服务过载）
-# - initial_wait=2.0: 首次等待2秒（给服务器恢复时间）
-# - max_wait=60.0: 最长等待60秒（避免无限等待）
-# - exponential_base=2.0: 指数退避基数（2s → 4s → 8s → 16s → 32s）
-# - jitter=True: 启用随机抖动（±25%，避免惊群效应）
-# - enabled=True: 默认启用重试功能
-# model_retry_middleware = MyRetryMiddleware(
-#     max_retries=5,
-#     initial_wait=2.0,
-#     max_wait=60.0,
-#     exponential_base=2.0,
-#     jitter=True,
-#     enabled=True
-# )
-logger.debug("共享 模型调用重试中间件 ModelRetryMiddleware (官方) 创建成功")
-
-# 官方工具重试中间件实例（可以共享，不依赖 sandbox）
-# 使用默认配置：
-# - max_retries=2: 最多重试2次（共3次尝试：1次初始 + 2次重试）
-# - retry_on=(Exception,): 对所有异常进行重试
-# - on_failure='continue': 失败后返回 ToolMessage，让智能体继续处理
-# - backoff_factor=2.0: 指数退避基数（1s → 2s → 4s）
-# - initial_delay=1.0: 首次等待1秒
-# - max_delay=60.0: 最长等待60秒
-# - jitter=True: 启用随机抖动（±25%，避免惊群效应）
-tool_retry_middleware = ToolRetryMiddleware()
-logger.debug("共享 工具重试中间件 ToolRetryMiddleware (官方) 创建成功")
+# ToolRetryMiddleware
+tool_retry_middleware = ToolRetryMiddleware(
+    on_failure='continue',
+    # when all retries are exhausted, return an `ToolMessage` with error details, allowing the LLM to handle the failure and potentially recover.
+    # on_failure='error',  # when all retries are exhausted, re-raise the exception, stopping agent execution.
+)
+logger.debug("共享 工具重试中间件 ToolRetryMiddleware 创建成功")
 
 shared_message_sequence_validator = MessageSequenceValidator()
 logger.debug("共享 消息序列验证中间件 MessageSequenceValidator 创建成功")

@@ -14,7 +14,8 @@
 #    这样的话，一个智能体在同一个软件开发任务中的短期记忆，无法被多个不同的智能体提供communicate注入，并且不同智能体发消息必须是同步调用收消息的智能体。
 # 2. 缺陷产生原因：CommunicateMiddleware 或者说 想发消息的智能体 ，它们直接拥有智能体对象而不是智能体的InBox
 #   同时团队中每个智能体的运行是由communicate工具出发的
-# 3. 缺陷解决办法：
+# 3. 被调用智能体的运行异常会影响主调智能体的运行。
+# 缺陷解决办法：
 # 每个智能体都拥有一个 CollaborateMiddleware，该中间件为智能体提供一个 Tasks/Attentions 列表、一个 send_message  工具
 # sender message只会为目标智能体创建一个关注点，并不会立即触发该智能体的运行
 # InBox中每条消息包含task_name-决定当前智能体启用哪条短期记忆、sender_name-告知接受任务的智能体完成任务后该向谁响应、private_message
@@ -119,10 +120,10 @@ Usage notes:
 
 COMMUNICATE_SYSTEM_PROMPT = """## `send_message` (team collaboration tool)
 
-You have access to an `send_message` tool to communicate with specialized expert agents in your development team.
+You have access to an `send_message` tool to communicate with specialized expert agents in the software development team.
 
 When to use this tool:
-- When you want to discuss or debate with one of your team members, use it as a communication tool
+- When you want to discuss or debate with one of the team members, use it as a communication tool
 - When you need to assign a specific task to a team member because this task requires his/her specialized expertise (coding, testing, product management, etc.)
 
 How to use:
@@ -228,9 +229,10 @@ def _build_send_message_tool(*,
         sender_name = user_name
         private_message = (f"1. Here comes a new message from {sender_name}:\n"
                            f"{private_message}\n"
-                           f"2. Give me your response to this new message like I were {sender_name}."
-                           f"Don't call {send_message_tool_name} with the expert_name equal to {sender_name},"
-                           f"because I will relay your response to {sender_name}.")
+                           f"2. Give me your (final) response to this new message like I were {sender_name}."
+                           f"No need to call {send_message_tool_name} with the `expert_name` equal to '{sender_name}', "
+                           f"because your response given to me will be directly sent to {sender_name}.")
+
         expert_input = {"messages": [HumanMessage(content=private_message)]}
 
         return expert, expert_input, expert_thread_id
@@ -251,7 +253,7 @@ def _build_send_message_tool(*,
         # 获取该专家的锁
         lock = expert_locks.get(expert_name)
         if not lock:
-            raise ValueError(f"Expert '{expert_name}' not found in your contacts list")
+            raise ValueError(f"Expert '{expert_name}' not found in your contacts list, try another expert next time.")
 
         # 尝试非阻塞获取锁，如果失败说明有并发调用，直接返回错误
         acquired = lock.acquire(blocking=False)
@@ -298,14 +300,15 @@ def _build_send_message_tool(*,
             return _return_command_with_state_update(expert_name, runtime, expert_result)
         except Exception as e:
             logger.error(f"专家智能体 {expert_name} 执行过程中出现异常: {e}", exc_info=True)
-            return Command(
-                update={
-                    "messages": [ToolMessage(
-                        f"专家智能体 {expert_name} 执行过程中出现异常: {str(e)}",
-                        tool_call_id=runtime.tool_call_id
-                    )]
-                }
-            )
+            # return Command(
+            #     update={
+            #         "messages": [ToolMessage(
+            #             f"专家智能体 {expert_name} 执行过程中出现异常: {str(e)}",
+            #             tool_call_id=runtime.tool_call_id
+            #         )]
+            #     }
+            # )
+            raise e  # 抛出异常，将由主调智能体的 ToolRetryMiddleware实例 来处理该异常
         finally:
             # 释放锁
             lock.release()
@@ -326,7 +329,7 @@ def _build_send_message_tool(*,
         # 获取该专家的 asyncio 锁
         lock = expert_async_locks.get(expert_name)
         if not lock:
-            raise ValueError(f"Expert '{expert_name}' not found in your contacts list")
+            raise ValueError(f"Expert '{expert_name}' not found in your contacts list, try another expert next time.")
 
         # 尝试获取锁，如果锁已被占用，说明有并发调用
         try:
@@ -375,14 +378,15 @@ def _build_send_message_tool(*,
             return _return_command_with_state_update(expert_name, runtime, expert_result)
         except Exception as e:
             logger.error(f"专家智能体 {expert_name} 执行过程中出现异常: {e}", exc_info=True)
-            return Command(
-                update={
-                    "messages": [ToolMessage(
-                        f"专家智能体 {expert_name} 执行过程中出现异常: {str(e)}",
-                        tool_call_id=runtime.tool_call_id
-                    )]
-                }
-            )
+            # return Command(
+            #     update={
+            #         "messages": [ToolMessage(
+            #             f"专家智能体 {expert_name} 执行过程中出现异常: {str(e)}",
+            #             tool_call_id=runtime.tool_call_id
+            #         )]
+            #     }
+            # )
+            raise e  # 抛出异常，将由主调智能体的 ToolRetryMiddleware实例 来处理该异常
         finally:
             # ⭐ 释放锁
             lock.release()
