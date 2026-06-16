@@ -9,9 +9,9 @@
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 
-from src.Tools import internet_search, get_weather_at_location
 from src.config.llm import LLMs
 from src.paths import LOCAL_AGENT_WORKSPACE
+from src.tools import internet_search, get_weather_at_location
 
 # 为了隔离详细工作并避免主智能体的上下文膨胀，可以使用子代理
 # 第一种方式是 基于字典的自定义副智能体dict-based SubAgent，类型是DeepAgent

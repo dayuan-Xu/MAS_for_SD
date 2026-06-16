@@ -1,5 +1,6 @@
 from langchain_core.tools import tool
-from src.Tools import get_current_time
+
+from src.tools import get_current_time
 
 
 @tool
@@ -36,3 +37,7 @@ def get_weather_at_location(city: str) -> str:
 - 白天湿度较低，天气干燥，注意补水保湿
 - 空气质量良好，适合户外活动
     """
+
+
+if __name__ == "__main__":
+    print(get_weather_at_location.invoke(input="上海"))

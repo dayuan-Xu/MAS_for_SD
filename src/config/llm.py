@@ -322,3 +322,6 @@ gpt-3.5-turbo
 }
 
 """
+
+if __name__ == "__main__":
+    test_minimax_m27()
