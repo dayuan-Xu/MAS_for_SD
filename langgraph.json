@@ -4,7 +4,7 @@
     "."
   ],
   "graphs": {
-    "my_graph": "./LangChain_LangGraph/langgraph/core_checkpointer.py:graph"
+    "researcher_agent": "src/langchain_learning/deep_agents/researcher.py:researcher_agent"
   },
   "env": ".env"
 }

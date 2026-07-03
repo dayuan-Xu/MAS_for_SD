@@ -16,7 +16,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from src.config.llm import LLMs
 from src.paths import LOCAL_AGENT_WORKSPACE
-from src.tools import get_weather_at_location
+from src.tools import get_weather_at_location, internet_search
 from src.utils.graph_running import multi_turn_conversation
 
 weather_agent = create_deep_agent(
@@ -82,9 +82,9 @@ checkpointer = InMemorySaver()
 
 researcher_agent = create_deep_agent(
     model=LLMs["gpt-5-mini"],
-    # tools=[internet_search],
+    tools=[internet_search],
     system_prompt=research_instructions,
-    checkpointer=checkpointer,  # 用于保存图state，进而实现多轮对话 + 人在循环。检查器的实现可以基于内存，也可以基于持久化数据库。
+    # checkpointer=checkpointer,  # 用于保存图state，进而实现多轮对话 + 人在循环。检查器的实现可以基于内存，也可以基于持久化数据库。
     backend=FilesystemBackend(root_dir=LOCAL_AGENT_WORKSPACE, virtual_mode=True),
     # interrupt_on={
     #     "internet_search": True,
@@ -94,13 +94,13 @@ researcher_agent = create_deep_agent(
     name="Researcher_DeepAgent",
 )
 
-config: RunnableConfig = {
-    # "tags": ["Researcher"],
-    "configurable": {
-        "thread_id": str(uuid.uuid4())
-    }
-}
+# config: RunnableConfig = {
+#     # "tags": ["Researcher"],
+#     "configurable": {
+#         "thread_id": str(uuid.uuid4())
+#     }
+# }
 
-# 示例问题： "deepagents是什么? 听说这个框架最近很火而且还在持续更新，请帮我浅浅查看一下它的官方文档并写一份精炼的调查报告"
-# 示例问题：input_text = "只调用getweather工具，告诉我上海天气，查询结果不用写入文件。"
-multi_turn_conversation(researcher_agent, config)
+# # 示例问题： "deepagents是什么? 听说这个框架最近很火而且还在持续更新，请帮我浅浅查看一下它的官方文档并写一份精炼的调查报告"
+# # 示例问题：input_text = "只调用getweather工具，告诉我上海天气，查询结果不用写入文件。"
+# multi_turn_conversation(researcher_agent, config)

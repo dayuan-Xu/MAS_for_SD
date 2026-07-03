@@ -58,3 +58,4 @@ htmlcov/
 /.lingma/
 /registered_tasks/
 /warehouse/
+.langgraph_api/

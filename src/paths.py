@@ -31,3 +31,5 @@ LOCAL_WAREHOUSE_PATH = PROJECT_ROOT_DIR / "warehouse"
 
 # 数据集文件路径
 SOFTWARE_DEV_7_PATH = DATASETS_PATH / "software_dev_7.yaml"
+
+LOCAL_AGENT_WORKSPACE = PROJECT_ROOT_DIR / "local_agent_workspace"
