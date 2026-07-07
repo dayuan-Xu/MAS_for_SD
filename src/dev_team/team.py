@@ -45,10 +45,11 @@ class AgentTeam:
                  task_name: str = "",
                  local_warehouse_path: Path = LOCAL_WAREHOUSE_PATH,
                  team_type: TeamType | str = TeamType.SIMPLE,
-                 enable_brown: bool = False):
+                 enable_brown: bool = False,
+                 monitor_agent_activity: bool = False):
         """初始化开发团队同步资源
         
-        ⚠️ 注意：此方法仅初始化同步资源（中间件、backend、LLM等），不会创建 checkpointer 和智能体。
+        ⚠️ 注意：此方法仅初始化同步资源（中间件、沙盒后端、LLM等），不会创建 checkpointer 和智能体。
         请使用异步工厂方法 create_with_agentbay_mcp() 进行完整初始化。
         
         Args:
@@ -67,10 +68,13 @@ class AgentTeam:
         self.local_warehouse_path = local_warehouse_path
         self.team_type = team_type
         self.enable_brown = enable_brown
+        self.monitor_agent_activity = monitor_agent_activity
 
         # 判断是否开启棕地开发，并根据判断结果初始化沙盒"""
         self.context_service = AgentBay(api_key=settings.WUYING_AGENTBAY_API_KEY).context
         self.thread_id, self.task_context_box_name, self.task_context_box_id, self.is_brown = self.init_dev_config()
+
+
         logger.info(f"\n"
                     f"是否棕地开发: {self.is_brown}\n"
                     f"线程ID: {self.thread_id}\n"
@@ -212,7 +216,8 @@ class AgentTeam:
                                        task_name: str,
                                        local_warehouse: Path = LOCAL_WAREHOUSE_PATH,
                                        team_type: TeamType | str = TeamType.SIMPLE,
-                                       enable_brown: bool = False):
+                                       enable_brown: bool = False,
+                                       monitor_agent_activity: bool = False):
         """异步工厂方法：创建带有 Wuying AgentBay MCP 工具的 AgentTeam 实例。
 
         这是推荐的初始化方式，会自动创建沙盒、加载 MCP 工具并初始化智能体。
@@ -227,12 +232,13 @@ class AgentTeam:
             AgentTeam: 配置好 MCP 工具的团队实例
         """
 
-        # 1. 创建团队实例
+        # 1. 初始化同步资源（sandbox、LLM、中间件等）
         instance = cls(
             task_name=task_name,
             local_warehouse_path=local_warehouse,
             team_type=team_type,
-            enable_brown=enable_brown
+            enable_brown=enable_brown,
+            monitor_agent_activity=monitor_agent_activity,
         )
 
         # 初始化异步资源 (MCP Tools, checkpointer)
@@ -277,10 +283,12 @@ class AgentTeam:
         """创建所有智能体"""
         # 创建简化版三人团队（Planner/Builder/Evaluator）
         logger.info("开始创建多智能体团队...")
-        self.evaluator = self._create_evaluator(use_mcp=True, log_agent_activity=True)
-        self.builder = self._create_builder(use_mcp=True, log_agent_activity=True)
-        self.planner = self._create_planner(log_agent_activity=True)
-        logger.info("✅ 多智能体（Alice、Bob、Eva创建完成，三者均添加了活动监控中间件")
+        self.evaluator = self._create_evaluator(use_mcp=True, log_agent_activity=self.monitor_agent_activity)
+        self.builder = self._create_builder(use_mcp=True, log_agent_activity=self.monitor_agent_activity)
+        self.planner = self._create_planner(log_agent_activity=self.monitor_agent_activity)
+        if self.monitor_agent_activity:
+            logger.info("✅ 多智能体（Alice、Bob、Eva创建完成，三者均添加了活动监控中间件，将记录智能体活动日志")
+        
 
         self.agents = [self.planner, self.builder, self.evaluator]
 

@@ -152,7 +152,13 @@ def setup_logging(
         "langchain",  # LangChain
         "langgraph",  # LangGraph
         "langsmith",  # ⭐ LangSmith（会产生大量 DEBUG 日志）
+        "langchain_core",
         "httpcore",  # HTTP 核心库
+        "sqlalchemy",
+        "sqlalchemy.engine",
+        "sqlalchemy.engine.Engine",
+        "sqlalchemy.pool",
+        "sqlalchemy.dialects",
     ]
 
     for logger_name in fully_suppressed_loggers:
@@ -162,7 +168,7 @@ def setup_logging(
 
     _logger = logging.getLogger(__name__)
     _logger.info(f"日志系统已配置")
-    _logger.info(f"日志目录: {log_path.absolute()}")
+    _logger.info(f"日志目录: {log_path.resolve()}")
     if task_name:
         _logger.info(f"任务名称: {task_name}")
         _logger.info(f"应用日志: app.log")

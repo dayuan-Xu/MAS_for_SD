@@ -152,7 +152,12 @@ def map_agentbay_error_to_file_operation_error(error_message: str) -> FileOperat
     if not error_message:
         logger.error("无法映射错误信息到 FileOperationError: 错误信息为空")
         return "Empty error message"
-    logger.debug(f"开始尝试映射错误信息到 FileOperationError")
+    logger.debug(f"开始尝试映射错误信息到 FileOperationError，错误信息为：\n{error_message}")
+
+    if "Upload failed: Error: InvalidsdkContext.NotFound code: 400,   Resource [sdkContext] is not found." in error_message:
+        logger.error("依据经验可以判断出，当前沙盒会话已经被释放，无法继续利用它上传文件，此处勉强将错误信息映射为 permission_denied")
+        return "permission_denied"
+
     error_lower = error_message.lower()
 
     # 文件不存在相关错误

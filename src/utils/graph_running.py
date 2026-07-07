@@ -251,11 +251,14 @@ async def async_multi_turn_conversation(
                         printed_msg_ids.add(msg.id)
                         # 只打印之前没打印过的新消息
                         if namespace:
-                            # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（新消息），
+                            # 如果namespace不是空元组，而是通往哪个调用子图的节点的路径，则说明是data是子图发射的事件（子图内产生的新消息），
                             # 比如是 直接调用的子图 'tools:UUID'，表示这个检查点属于名为 "tools" 的节点所调用的子图
                             # 比如是 多层嵌套的子图 "outer_node:uuid|inner_node:uuid"，
                             # "tools|ns_for_fruit_agent"表示：父图的 tools 节点 → 调用了一个子图，该子图中又有一个名为 ns_for_fruit_agent 的子图
-                            print("\n" + "=" * 33 + "👇 下面这条消息是子图的新消息\n")
+                            # 在src\main.py中的talk_with_agent_team函数中，可以根据namespace判断当前前消息的产生来源是Bob还是Eva，比如
+                            # 对于Bob，有“=================================👇 下面这条消息是子图的新消息 ns = ('expert_Bob',)”
+                            # 对于Eva，有“=================================👇 下面这条消息是子图的新消息 ns = ('expert_Eva',)”
+                            print("\n" + "=" * 33 + f"👇 下面这条消息是子图的新消息 ns = {namespace}\n")
                         msg.pretty_print()
                 # 判断本次ReAct循环是否完整地结束了
                 if human_in_the_loop:

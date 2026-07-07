@@ -248,8 +248,8 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     # 运行任务
-    # asyncio.run(talk_with_agent_team(team_type="dual"))
-    asyncio.run(experiment(team_type="simple"))
+    asyncio.run(talk_with_agent_team(team_type="simple"))
+    # asyncio.run(experiment(team_type="simple"))
 
     # 重播消息
     # asyncio.run(get_messages())

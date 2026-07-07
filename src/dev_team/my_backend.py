@@ -7,20 +7,72 @@ import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
+from typing_extensions import override
 
-from agentbay import AgentBay, CreateSessionParams, SessionResult, ContextSync, CommandResult, \
-    UploadResult, DownloadResult
-from deepagents.backends.protocol import ExecuteResponse, FileDownloadResponse, FileUploadResponse, FileOperationError
-from deepagents.backends.protocol import ReadResult, FileData
+from agentbay import (
+    AgentBay,
+    CommandResult,
+    ContextSync,
+    CreateSessionParams,
+    DownloadResult,
+    SessionResult,
+    UploadResult,
+)
+from deepagents.backends.protocol import (
+    ExecuteResponse,
+    FileData,
+    FileDownloadResponse,
+    FileOperationError,
+    FileUploadResponse,
+    ReadResult,
+)
 from deepagents.backends.sandbox import BaseSandbox
 from deepagents.backends.utils import _get_file_type
 
 from src.config.settings import settings
-from src.dev_team.team_config import CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX, AGENTBAY_IMAGE_ID
-from src.utils.common import to_snake_case, should_skip_path, write_content_to_file, process_command_parts, \
-    map_agentbay_error_to_file_operation_error
+from src.dev_team.team_config import (
+    AGENTBAY_IMAGE_ID,
+    CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX,
+)
+from src.utils.common import (
+    map_agentbay_error_to_file_operation_error,
+    process_command_parts,
+    should_skip_path,
+    to_snake_case,
+    write_content_to_file,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class SandboxSessionExpiredError(RuntimeError):
+    """沙盒会话过期异常
+
+    当 AgentBay 沙盒会话达到最长运行时间限制时抛出。
+    此异常在抛出前已完成成果物下载和会话清理。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        session_id: str | None = None,
+        elapsed_minutes: float | None = None,
+    ):
+        super().__init__(message)
+        self.session_id = session_id
+        self.elapsed_minutes = elapsed_minutes
+
+
+class SandboxSessionCreateError(RuntimeError):
+    """沙盒会话创建异常
+
+    当为某个thread id而多次尝试创建 AgentBay 沙盒会话失败时抛出。
+    """
+
+    def __init__(self, message: str, thread_id: str | None = None):
+        super().__init__(message)
+        self.thread_id = thread_id
+
 
 # ========== 常量定义 ==========
 READ_COMMAND_TEMPLATE = """python3 -c "
@@ -126,13 +178,16 @@ class LinuxSandboxBackend(BaseSandbox):
     所有文件操作和命令执行都在云端进行，而非本地。
     """
 
-    def __init__(self, *,
-                 task_name: str = "",
-                 task_context_box_name: str = "",
-                 local_dir_for_task_products: Path,
-                 image_id: str = AGENTBAY_IMAGE_ID,
-                 api_key: str = settings.WUYING_AGENTBAY_API_KEY, idle_timeout: int = 30 * 60,
-                 ):
+    def __init__(
+        self,
+        *,
+        task_name: str = "",
+        task_context_box_name: str = "",
+        local_dir_for_task_products: Path,
+        image_id: str = AGENTBAY_IMAGE_ID,
+        api_key: str = settings.WUYING_AGENTBAY_API_KEY,
+        idle_timeout: int = 30 * 60,
+    ):
         """初始化LinuxSandboxBackend的静态资源。
 
         Args:
@@ -157,14 +212,21 @@ class LinuxSandboxBackend(BaseSandbox):
         self.sandbox_type = "linux"
 
         self._idle_timeout = idle_timeout
-        self._sandbox_max_running_time_str = "3 hours"  # 当前镜像的最长持续运行时间（字符串描述）
+        self._sandbox_max_running_time_str = (
+            "3 hours"  # 当前镜像的最长持续运行时间（字符串描述）
+        )
         self._sandbox_max_running_time_seconds = 3 * 60 * 60  # 3小时转换为秒
-        self.time_for_products_download = 10  # 在达到当前镜像的最长持续运行时间的10 分钟前主动提前释放沙盒会话
+        self.time_for_products_download = (
+            10  # 在达到当前镜像的最长持续运行时间的10 分钟前主动提前释放沙盒会话
+        )
 
         # 确定当前 task的context box 在sandbox中的挂载路径
-        self._task_context_box_mount_path_prefix = CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX[
-            f'{self.sandbox_type}']
-        self._task_context_box_leaf_dir_name = to_snake_case(task_name) if task_name else ""
+        self._task_context_box_mount_path_prefix = (
+            CONTEXT_MOUNT_PATH_PREFIX_OF_NEW_TASK_CONTEXT_BOX[f"{self.sandbox_type}"]
+        )
+        self._task_context_box_leaf_dir_name = (
+            to_snake_case(task_name) if task_name else ""
+        )
         self.task_context_box_mount_path = f"{self._task_context_box_mount_path_prefix}/{self._task_context_box_leaf_dir_name}"
         logger.info(
             f"当前Task Context Box 的云端挂载路径为{self.task_context_box_mount_path}\n"
@@ -179,7 +241,7 @@ class LinuxSandboxBackend(BaseSandbox):
         params = CreateSessionParams(
             image_id=self.image_id,
             context_syncs=my_context_syncs,
-            idle_release_timeout=self._idle_timeout
+            idle_release_timeout=self._idle_timeout,
         )
 
         # 开始创建会话
@@ -198,15 +260,20 @@ class LinuxSandboxBackend(BaseSandbox):
 
                     # 记录会话创建时间
                     self._session_start_time = datetime.now()
-                    logger.info(f"\n"
-                                f"✅ AgentBay 会话创建成功, SessionId={self._session_id}\n"
-                                f"🕒 会话创建时间: {self._session_start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    logger.info(
+                        f"\n"
+                        f"✅ AgentBay 会话创建成功, SessionId={self._session_id}\n"
+                        f"🕒 会话创建时间: {self._session_start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
                     break
                 else:
                     # 判断是否可重试
-                    error_msg = getattr(result, 'error_message', '未知错误')
+                    error_msg = getattr(result, "error_message", "未知错误")
                     # 检查是否是资源不足的错误
-                    if "All candidate AppInstanceGroups have no idle AppInstances now, please retry later" in error_msg:
+                    if (
+                        "All candidate AppInstanceGroups have no idle AppInstances now, please retry later"
+                        in error_msg
+                    ):
                         if attempt < max_retries - 1:  # 不是最后一次尝试
                             logger.warning(
                                 f"⚠️ AgentBay 资源不足，第 {attempt + 1} 次重试，等待 {retry_delay} 秒后重试...\n"
@@ -216,39 +283,51 @@ class LinuxSandboxBackend(BaseSandbox):
                             retry_delay *= 2  # 指数退避策略
                             continue
                         else:
-                            logger.error(f"❌ AgentBay 资源不足，已达到最大重试次数 {max_retries}，放弃重试")
-                            logger.error(f"   最终错误: {error_msg}")
-                            raise  # 重新抛出异常
+                            logger.error(
+                                f"❌ AgentBay 资源不足，已达到最大重试次数 {max_retries}，放弃重试"
+                            )
+                            raise SandboxSessionCreateError(
+                                f"为线程 {self.thread_id} 多次尝试创建 AgentBay 会话失败，资源不足",
+                                thread_id=self.thread_id,
+                            )
                     else:
                         # 非资源不足的错误，直接抛出
-                        raise RuntimeError(f"创建会话时发生未预期的异常: {error_msg}")
+                        raise RuntimeError(
+                            f"尝试创建 AgentBay 会话时发生未预期的异常: {error_msg}"
+                        )
+
+        except SandboxSessionCreateError as e:
+            # 为线程创建会话失败，直接抛出异常
+            raise e
+
         except Exception as e:
             # 其他类型的异常，直接抛出
-            logger.error(f"❌ 创建会话时发生异常: {e}", exc_info=True)
+            logger.error(f"❌ 创建会话时发生未预期的异常: {e}", exc_info=True)
             raise
 
         logger.info(f"{self.__class__.__name__}  实例初始化完成")
 
     def get_existing_task_context(self):
-        """获取或创建当前任务的 Context。
-        """
+        """获取或创建当前任务的 Context。"""
         res = self.context_service.get(self.task_context_box_name, create=False)
         if not res.success:
             logger.error(
-                f"❌ 获取任务存储盒失败: {res.error_message}, 存储盒名: {self.task_context_box_name}")
+                f"❌ 获取任务存储盒失败: {res.error_message}, 存储盒名: {self.task_context_box_name}"
+            )
             return None
         logger.info(
-            f"✅ 本次软件开发所用任务存储盒获取成功: {res.context.id}, 存储盒名: {self.task_context_box_name}")
+            f"✅ 本次软件开发所用任务存储盒获取成功: {res.context.id}, 存储盒名: {self.task_context_box_name}"
+        )  # type: ignore
 
         return res.context
 
     def _get_task_context_sync(self) -> ContextSync:
         """获取当前任务的 Context同步配置。"""
         task_context_1 = self.get_existing_task_context()
-        self.task_context_box_id = task_context_1.id
+        self.task_context_box_id = task_context_1.id  # type: ignore
         return ContextSync.new(
-            context_id=task_context_1.id,
-            path=self.task_context_box_mount_path
+            context_id=task_context_1.id,  # type: ignore
+            path=self.task_context_box_mount_path,
         )
 
     def _get_context_syncs(self) -> list[ContextSync]:
@@ -279,7 +358,7 @@ class LinuxSandboxBackend(BaseSandbox):
         ⚠️ 在通过当前对象的_session属性调用AgentBay MCP 工具前必须调用此方法，以防止会话过期导致操作失败。
 
         Raises:
-            RuntimeError: 当会话剩余时间不足10分钟时抛出
+            SandboxSessionExpiredError: 当会话剩余时间不足10分钟时抛出
         """
         if self._session_start_time is None:
             logger.warning("⚠️ 会话创建时间未记录，跳过时间检查")
@@ -294,17 +373,23 @@ class LinuxSandboxBackend(BaseSandbox):
 
         if remaining_seconds < 0:
             # 会话已过期，但是还有工具调用在执行，则抛出异常给ToolRetryMiddleware的钩子函数
-            raise RuntimeError(f"⚠️ 沙盒会话已被主动提前断开，并且距离断开已经过了一段时间！\n"
-                               f"   - 最大运行时间: {self._sandbox_max_running_time_str} ({self._sandbox_max_running_time_seconds}秒)\n"
-                               f"   - 已运行时间: {elapsed_seconds / 60:.1f} 分钟\n"
-                               f"   - 会话已经过期了{(-remaining_seconds) / 60} 分钟 {(-remaining_seconds) % 60} 秒\n")
+            raise SandboxSessionExpiredError(
+                f"⚠️ 沙盒会话已被主动提前断开，并且距离断开已经过了一段时间！\n"
+                f"   - 最大运行时间: {self._sandbox_max_running_time_str} ({self._sandbox_max_running_time_seconds}秒)\n"
+                f"   - 已运行时间: {elapsed_seconds / 60:.1f} 分钟\n"
+                f"   - 会话已经过期了{(-remaining_seconds) / 60} 分钟 {(-remaining_seconds) % 60} 秒\n",
+                session_id=self._session_id,
+                elapsed_minutes=elapsed_seconds / 60,
+            )
 
         # 如果剩余时间不足10分钟=10*60秒，提前清理并抛出异常
         time_threshold_seconds = self.time_for_products_download * 60
         if 0 <= remaining_seconds <= time_threshold_seconds:
             remaining_minutes = remaining_seconds / 60
 
-            logger.debug(f"🕒 会话运行状态: 已运行 {elapsed_seconds / 60:.1f} 分钟, 剩余 {remaining_minutes:.1f} 分钟")
+            logger.debug(
+                f"🕒 会话运行状态: 已运行 {elapsed_seconds / 60:.1f} 分钟, 剩余 {remaining_minutes:.1f} 分钟"
+            )
             if self.session is not None:
                 # 第一次检测到应该释放，那就释放。
                 error_msg = (
@@ -322,28 +407,55 @@ class LinuxSandboxBackend(BaseSandbox):
                 try:
                     self.download_task_artifacts(self.local_dir_for_task_products)
                     self.delete_session()
-                    logger.info("✅ 为避免会话突然过期导致沙盒软件成果物无法及时下载到本地，已主动清理成功即将过期的会话")
+                    logger.info(
+                        "✅ 为避免会话突然过期导致沙盒软件成果物无法及时下载到本地，已主动清理成功即将过期的会话"
+                    )
                 except Exception as e:
                     logger.warning(
-                        f"⚠️ 为避免会话突然过期导致沙盒软件成果物无法及时下载到本地，主动清理会话时出现异常: {e}")
+                        f"⚠️ 为避免会话突然过期导致沙盒软件成果物无法及时下载到本地，主动清理会话时出现异常: {e}"
+                    )
 
                 else:
-                    raise RuntimeError(error_msg)
+                    raise SandboxSessionExpiredError(
+                        error_msg,
+                        session_id=self._session_id,
+                        elapsed_minutes=elapsed_seconds / 60,
+                    )
             elif self._session_id is None:
                 # 已经释放掉，但是还有工具调用正在执行，则抛出异常给ToolRetryMiddleware的钩子函数
-                raise RuntimeError(f"⚠️ 沙盒会话已被主动提前断开！\n"
-                                   f"   - 最大运行时间: {self._sandbox_max_running_time_str} ({self._sandbox_max_running_time_seconds}秒)\n"
-                                   f"   - 已运行时间: {elapsed_seconds / 60:.1f} 分钟\n")
+                raise SandboxSessionExpiredError(
+                    f"⚠️ 沙盒会话已被主动提前断开！\n"
+                    f"   - 最大运行时间: {self._sandbox_max_running_time_str} ({self._sandbox_max_running_time_seconds}秒)\n"
+                    f"   - 已运行时间: {elapsed_seconds / 60:.1f} 分钟\n",
+                    session_id=self._session_id,
+                    elapsed_minutes=elapsed_seconds / 60,
+                )
 
+    @property
+    def sandbox_expired(self) -> bool:
+        """判断沙盒会话是否已过期
+
+        Returns:
+            True: 会话已过期或已被清理
+            False: 会话正常运行中
+        """
+        if self._session_id is None or self.session is None:
+            return True
+
+        elapsed_seconds = (datetime.now() - self._session_start_time).total_seconds()
+        return elapsed_seconds >= self._sandbox_max_running_time_seconds
+
+    @override
     def execute(
-            self,
-            command: str,
-            *,
-            timeout: int | None = None,
+        self,
+        command: str,
+        *,
+        timeout: int | None = None,
     ) -> ExecuteResponse:
         """Execute a command in the sandbox and return ExecuteResponse.
 
-        确保云端 Python 脚本使用 UTF-8 编码执行
+        确保云端 Python 脚本使用 UTF-8 编码执行。
+        BaseSandbox提供的ls、read、edit、grep、glob方法（这些方法支撑了LangChain文件系统中间件的ls、read、edit、grep、glob工具）的实现都是基于该方法。
         """
         # 在下载文件前检查会话剩余时间
         self.check_session_remaining_time()
@@ -358,7 +470,7 @@ class LinuxSandboxBackend(BaseSandbox):
         # 为 Python 命令添加 UTF-8 编码环境变量,以便智能体调用read、ls、grep、glob工具时看到正确的文字输出。
         # 检测是否是 Python 命令(已知 BaseSandbox.read/ls/grep/glob 等方法执行时,底层会调用execute方法执行python代码,方式大致为python -c "python代码")
         # 关键修复：只在 python/python3 命令前添加环境变量，而不是在整个命令前添加
-        if 'python' in command.lower():
+        if "python" in command.lower():
 
             if self.sandbox_type == "linux":
                 # Linux/Unix: 使用正则表达式找到所有 python/python3 命令并在其前添加 PYTHONUTF8=1
@@ -374,12 +486,16 @@ class LinuxSandboxBackend(BaseSandbox):
             elif self.sandbox_type == "windows":
                 # Windows CMD: 需要在每个 python 命令前添加 set PYTHONUTF8=1 &&
                 # 但 Windows 下处理更复杂，简单起见，如果命令以 python 开头则添加
-                if command.strip().lower().startswith('python'):
+                if command.strip().lower().startswith("python"):
                     command = f"set PYTHONUTF8=1 && {command}"
-                    logger.debug(f"🔧 已为 Python 命令添加 UTF-8 编码环境变量 (Windows)")
+                    logger.debug(
+                        f"🔧 已为 Python 命令添加 UTF-8 编码环境变量 (Windows)"
+                    )
 
         # agentbay execute工具默认的超时时间是50秒
-        command_result: CommandResult = self.session.command.execute_command(command, timeout_ms=timeout_ms)
+        command_result: CommandResult = self.session.command.execute_command(
+            command, timeout_ms=timeout_ms
+        )
 
         output = command_result.output  # shell命令执行后的stdout+stderr
         exit_code = command_result.exit_code
@@ -390,6 +506,10 @@ class LinuxSandboxBackend(BaseSandbox):
             if r'"system_error":"Command timed out"' in error_msg:
                 output = f"shell命令执行超时（timeout={timeout}），请为本次shell命令（{command}）设置更大的timeout后重试！"
 
+            if "HTTP request failed with code: 404" in error_msg:
+                # 表明当前当前沙盒Session已被释放。
+                output = f"当前沙盒会话已被释放（删除），请停止开发并请示人类下一步行动"
+
             logger.error(
                 f"❌ session.command.execute_command 执行失败:\n"
                 f"失败的shell命令：\n"
@@ -398,31 +518,29 @@ class LinuxSandboxBackend(BaseSandbox):
                 f"智能体所见的shell工具执行结果：\n"
                 f"{output}\n"
                 f"API返回的错误消息：\n"
-                f"{error_msg}\n")
-            return ExecuteResponse(
-                output=output,
-                exit_code=exit_code,
-                truncated=False
+                f"{error_msg}\n"
             )
+            return ExecuteResponse(output=output, exit_code=exit_code, truncated=False)
 
-        logger.debug(f"✅ session.command.execute_command 执行成功\n"
-                     f"执行的命令：\n"
-                     f"{command}\n"
-                     f"超时时间设置：{timeout} 秒\n"
-                     f"命令执行结果：\n"
-                     f"{output}")
-
-        return ExecuteResponse(
-            output=output,
-            exit_code=exit_code,
-            truncated=False
+        logger.debug(
+            f"✅ session.command.execute_command 执行成功\n"
+            f"执行的命令：\n"
+            f"{command}\n"
+            f"超时时间设置：{timeout} 秒\n"
+            f"命令执行结果：\n"
+            f"{output}"
         )
 
+        return ExecuteResponse(output=output, exit_code=exit_code, truncated=False)
+
+    @override
     def upload_files(self, files: list[tuple[str, bytes]]) -> list[FileUploadResponse]:
         """Upload multiple files to the sandbox.
-        
+
         使用 AgentBay 原生的 upload_file() API，而不是 write_file()
         通过临时文件桥接 bytes → 本地文件 → 云端
+
+        LangChain BaseSandbox的write、edit方法（这两个方法支撑了LangChain文件系统中间件的write file工具和edit file工具）底层会调用该方法。
         """
         # 在下载文件前检查会话剩余时间
         self.check_session_remaining_time()
@@ -434,49 +552,57 @@ class LinuxSandboxBackend(BaseSandbox):
 
             # 确保父目录存在
             parent_dir = str(Path(file_path).parent)
-            if parent_dir and parent_dir != '.':
+            if parent_dir and parent_dir != ".":
                 self.session.file_system.create_directory(parent_dir)
 
             # 创建临时文件，使用 AgentBay 原生 upload_file API
-            with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.tmp') as temp_file:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", delete=False, suffix=".tmp"
+            ) as temp_file:
                 temp_file.write(content)
                 temp_file_path = temp_file.name
 
             # 使用 AgentBay 原生 upload_file API（支持二进制文件）
             upload_result: UploadResult = self.session.file_system.upload_file(
-                local_path=temp_file_path,
-                remote_path=file_path
+                local_path=temp_file_path, remote_path=file_path
             )
 
             if upload_result.success:
                 logger.debug(f"✅ 上传成功: {file_path}")
                 responses.append(FileUploadResponse(path=file_path))
             else:
-                error_msg = getattr(upload_result, 'error_message', '未知错误')
+                error_msg = getattr(upload_result, "error_message", "未知错误")
                 logger.error(
-                    f"❌ session.file_system.upload_file 执行失败:\n目标文件路径 {file_path},\n错误: {error_msg}")
+                    f"❌ session.file_system.upload_file 执行失败:\n目标文件路径 {file_path},\n错误: {error_msg}"
+                )
                 # 清理临时文件
                 if temp_file_path and os.path.exists(temp_file_path):
                     try:
                         os.unlink(temp_file_path)
                     except Exception as e:
-                        logger.warning(f"⚠️ Failed to clean up temp file: {temp_file_path}, Error: {e}")
+                        logger.warning(
+                            f"⚠️ Failed to clean up temp file: {temp_file_path}, Error: {e}"
+                        )
 
-                # 将 AgentBay 错误映射到标准 FileOperationError
-                standardized_error = map_agentbay_error_to_file_operation_error(error_msg)
+                # 尝试将 AgentBay 错误映射到标准 FileOperationError
+                standardized_error = map_agentbay_error_to_file_operation_error(
+                    error_msg
+                )
                 if not isinstance(standardized_error, FileOperationError):
                     standardized_error = error_msg
-                responses.append(FileUploadResponse(
-                    path=file_path,
-                    error=standardized_error
-                ))
+                responses.append(
+                    FileUploadResponse(path=file_path, error=standardized_error)
+                )
         return responses
 
+    @override
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         """Download multiple files from the sandbox.
-        
+
         优化：使用 AgentBay 原生的 download_file() API，而不是 read_file()
         通过临时文件桥接 云端 → 本地文件 → bytes
+
+        LangChain BaseSandbox似乎没有调用该方法的，不确定LangChain 文件系统中间件是否会调用该方法。。
         """
         # 在下载文件前检查会话剩余时间
         self.check_session_remaining_time()
@@ -487,51 +613,56 @@ class LinuxSandboxBackend(BaseSandbox):
             logger.debug(f"📥 正在下载文件: {file_path}")
 
             # 关键优化：创建临时文件，使用 AgentBay 原生 download_file API
-            with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.tmp') as temp_file:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", delete=False, suffix=".tmp"
+            ) as temp_file:
                 temp_file_path = temp_file.name
 
             # 使用 AgentBay 原生 download_file API（支持二进制文件）
             download_result: DownloadResult = self.session.file_system.download_file(
-                remote_path=file_path,
-                local_path=temp_file_path
+                remote_path=file_path, local_path=temp_file_path
             )
 
             if download_result.success:
                 # 读取临时文件为 bytes
-                with open(temp_file_path, 'rb') as f:
+                with open(temp_file_path, "rb") as f:
                     content = f.read()
 
                 logger.debug(f"✅ 下载成功: {file_path} ({len(content)} 字节)")
-                responses.append(FileDownloadResponse(
-                    path=file_path,
-                    content=content
-                ))
+                responses.append(FileDownloadResponse(path=file_path, content=content))
             else:
-                error_msg = getattr(download_result, 'error_message', '未知错误')
+                error_msg = getattr(download_result, "error_message", "未知错误")
                 logger.error(
-                    f"❌ session.file_system.download_file 执行失败:\n目标文件路径 {file_path},\n错误: {error_msg}")
+                    f"❌ session.file_system.download_file 执行失败:\n目标文件路径 {file_path},\n错误: {error_msg}"
+                )
                 # 清理临时文件
                 if temp_file_path and os.path.exists(temp_file_path):
                     try:
                         os.unlink(temp_file_path)
                     except Exception as e:
-                        logger.warning(f"⚠️ Failed to clean up temp file: {temp_file_path}, Error: {e}")
+                        logger.warning(
+                            f"⚠️ Failed to clean up temp file: {temp_file_path}, Error: {e}"
+                        )
 
-                # 将 AgentBay 错误映射到标准 FileOperationError
-                standardized_error = map_agentbay_error_to_file_operation_error(error_msg)
+                # 尝试将 AgentBay 错误映射到标准 FileOperationError
+                standardized_error = map_agentbay_error_to_file_operation_error(
+                    error_msg
+                )
                 if not isinstance(standardized_error, FileOperationError):
                     standardized_error = error_msg
-                responses.append(FileDownloadResponse(
-                    path=file_path,
-                    error=standardized_error
-                ))
+                responses.append(
+                    FileDownloadResponse(path=file_path, error=standardized_error)
+                )
 
         return responses
 
     # 重写父类文件系统read方法
+    @override
     def read(self, file_path: str, offset: int = 0, limit: int = 2000):
         """读取文件内容，添加日志记录并处理 AgentBay 的 base64 编码响应。"""
-        logger.debug(f"📖 [read] 读取文件: {file_path} (offset={offset}, limit={limit})")
+        logger.debug(
+            f"📖 [read] 读取文件: {file_path} (offset={offset}, limit={limit})"
+        )
 
         # 获取文件类型
         file_type = _get_file_type(file_path)
@@ -548,29 +679,39 @@ class LinuxSandboxBackend(BaseSandbox):
 
         # 执行命令
         execute_result = self.execute(cmd)
-        output = execute_result.output.rstrip()  # 根据cmd的内容，output应该时JSON格式字符串
+        output = (
+            execute_result.output.rstrip()
+        )  # 根据cmd的内容，output应该时JSON格式字符串
 
         try:
             data = json.loads(output)
         except (json.JSONDecodeError, ValueError):
-            error_msg = f"File '{file_path}': unexpected server response: {execute_result}"
+            error_msg = (
+                f"File '{file_path}': unexpected server response: {execute_result}"
+            )
             logger.error(f"❌ [read] {error_msg}")
             return ReadResult(error=error_msg)
 
         if not isinstance(data, dict):
-            error_msg = f"File '{file_path}': unexpected server response: {execute_result}"
+            error_msg = (
+                f"File '{file_path}': unexpected server response: {execute_result}"
+            )
             logger.error(f"❌ [read] {error_msg}")
             return ReadResult(error=error_msg)
 
         if "error" in data:
             error_msg = f"File '{file_path}': {data['error']}"
-            logger.warning(f"⚠️ [read] 发现 REAM_COMMAND_TEMPLATE 命令打印出的错误信息 {error_msg}")
+            logger.warning(
+                f"⚠️ [read] 发现 REAM_COMMAND_TEMPLATE 命令打印出的错误信息 {error_msg}"
+            )
             return ReadResult(error=error_msg)
 
         # 成功读取
         content_length = len(data["content"])
         encoding = data.get("encoding", "utf-8")
-        logger.debug(f"✅ [read] 成功读取文件 '{file_path}' ({content_length} 字符, encoding={encoding})")
+        logger.debug(
+            f"✅ [read] 成功读取文件 '{file_path}' ({content_length} 字符, encoding={encoding})"
+        )
 
         return ReadResult(
             file_data=FileData(
@@ -597,9 +738,16 @@ class LinuxSandboxBackend(BaseSandbox):
 
         try:
             list_result = self.session.file_system.list_directory(cloud_dir)
-            if not list_result.success or not list_result.entries:
+            if not list_result.success:
                 logger.error(
-                    f"❌ session.file_system.list_directory调用失败，\n 目标路径：{cloud_dir}\n错误信息:\n {list_result.error_message}")
+                    f"❌ session.file_system.list_directory调用失败，\n 目标路径：{cloud_dir}\n错误信息:\n {list_result.error_message}"
+                )
+                return 0
+
+            if not list_result.entries:
+                logger.warning(
+                    f"⚠️ session.file_system.list_directory调用发现目录为空，\n目标路径：{cloud_dir}\n"
+                )
                 return 0
 
             # 打印第一个 entry 的所有属性，了解其结构
@@ -608,26 +756,29 @@ class LinuxSandboxBackend(BaseSandbox):
                 logger.debug(f"🔍 DirectoryEntry 对象属性: {dir(first_entry)}")
                 logger.debug(f"   - 类型: {type(first_entry)}")
                 # 尝试访问常见属性
-                for attr in ['path', 'name', 'full_path', 'file_path', 'entry_path']:
+                for attr in ["path", "name", "full_path", "file_path", "entry_path"]:
                     if hasattr(first_entry, attr):
                         logger.debug(f"   - {attr}: {getattr(first_entry, attr)}")
 
             for entry in list_result.entries:
                 # 尝试多种可能的属性名
                 cloud_path = None
-                for attr_name in ['path', 'full_path', 'file_path', 'entry_path']:
+                for attr_name in ["path", "full_path", "file_path", "entry_path"]:
                     if hasattr(entry, attr_name):
                         cloud_path = getattr(entry, attr_name)
                         break
 
                 # 如果找不到完整路径属性，但有 name 属性，则手动拼接完整路径
-                if cloud_path is None and hasattr(entry, 'name'):
+                if cloud_path is None and hasattr(entry, "name"):
                     # name 只是文件名，需要与父目录拼接
                     cloud_path = f"{cloud_dir}/{entry.name}"
                     logger.debug(f"   📝 使用 name 属性拼接路径: {cloud_path}")
 
                 if cloud_path is None:
-                    logger.error(f"❌ 无法找到 entry 的路径属性，可用属性: {dir(entry)}", exc_info=True)
+                    logger.error(
+                        f"❌ 无法找到 entry 的路径属性，可用属性: {dir(entry)}",
+                        exc_info=True,
+                    )
                     continue
 
                 # 统一使用 POSIX 路径格式（正斜杠）进行相对路径计算
@@ -635,8 +786,8 @@ class LinuxSandboxBackend(BaseSandbox):
                 base_path = f"{self._task_context_box_mount_path_prefix}/{self._task_context_box_leaf_dir_name}"
 
                 # 使用纯字符串操作计算相对路径，避免跨平台路径格式问题
-                if cloud_path.startswith(base_path + '/'):
-                    relative_path_str = cloud_path[len(base_path) + 1:]
+                if cloud_path.startswith(base_path + "/"):
+                    relative_path_str = cloud_path[len(base_path) + 1 :]
                 elif cloud_path == base_path:
                     continue  # 跳过基础路径本身
                 else:
@@ -662,18 +813,19 @@ class LinuxSandboxBackend(BaseSandbox):
                     temp_file_path = None
                     try:
                         # 创建临时文件
-                        with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.tmp') as temp_file:
+                        with tempfile.NamedTemporaryFile(
+                            mode="wb", delete=False, suffix=".tmp"
+                        ) as temp_file:
                             temp_file_path = temp_file.name
 
                         # 使用原生 download_file API
                         download_result = self.session.file_system.download_file(
-                            remote_path=cloud_path,
-                            local_path=temp_file_path
+                            remote_path=cloud_path, local_path=temp_file_path
                         )
 
                         if download_result.success:
                             # 读取临时文件并写入目标位置
-                            with open(temp_file_path, 'rb') as f:
+                            with open(temp_file_path, "rb") as f:
                                 file_content = f.read()
 
                             # 使用统一的文件写入方法
@@ -682,18 +834,24 @@ class LinuxSandboxBackend(BaseSandbox):
                             downloaded_count += 1
                             logger.debug(f"✅ 已下载: {cloud_path} -> {local_path}")
                         else:
-                            error_msg = getattr(download_result, 'error', '未知错误')
-                            logger.warning(f"⚠️ 下载失败: {cloud_path}, 错误: {error_msg}")
+                            error_msg = getattr(download_result, "error", "未知错误")
+                            logger.warning(
+                                f"⚠️ 下载失败: {cloud_path}, 错误: {error_msg}"
+                            )
 
                     except Exception as e:
-                        logger.error(f"❌ 下载异常: {cloud_path}, 错误: {e}", exc_info=True)
+                        logger.error(
+                            f"❌ 下载异常: {cloud_path}, 错误: {e}", exc_info=True
+                        )
                     finally:
                         # 清理临时文件
                         if temp_file_path and os.path.exists(temp_file_path):
                             try:
                                 os.unlink(temp_file_path)
                             except Exception as e:
-                                logger.warning(f"⚠️ 清理临时文件失败: {temp_file_path}, 错误: {e}")
+                                logger.warning(
+                                    f"⚠️ 清理临时文件失败: {temp_file_path}, 错误: {e}"
+                                )
 
         except Exception as e:
             logger.info(f"⚠️ 递归下载出错: {e}")
@@ -705,23 +863,25 @@ class LinuxSandboxBackend(BaseSandbox):
 
     def download_task_artifacts(self, local_download_dir: Path):
         """下载当前任务的所有成果物到本地目录。
-        
+
         Args:
             local_download_dir: 本地下载目标目录
-            
+
         Returns:
             bool: 是否成功下载
         """
         logger.info(
-            f"📥 下载任务成果物, 任务存储盒子名={self.task_context_box_name}, 本地目标目录={local_download_dir}")
+            f"📥 下载任务成果物, 任务存储盒子名={self.task_context_box_name}, 本地目标目录={local_download_dir}"
+        )
 
         if not self.task_context_box_name:
             logger.warning("⚠️ 未关联任务存储盒，跳过下载")
             return
 
         if not self.session:
-            logger.error("❌ 会话不存在，跳过下载", exc_info=True)
-            logger.info("会话不存在，无法下载成果物")
+            logger.warning(
+                "⚠️ 会话为None，可能是沙盒会话超过预设最大持续时间而被自动释放，无法再次下载成果物，跳过下载"
+            )
             return
 
         try:
@@ -734,7 +894,9 @@ class LinuxSandboxBackend(BaseSandbox):
             downloaded_count = self._download_recursive(cloud_path, local_download_dir)
 
             logger.info(f"✅ 下载完成: 共 {downloaded_count} 个文件")
-            logger.info(f"✅ 成功下载 {downloaded_count} 个文件到: {local_download_dir}")
+            logger.info(
+                f"✅ 成功下载 {downloaded_count} 个文件到: {local_download_dir}"
+            )
 
         except Exception as e:
             logger.error(f"❌ 下载失败: {e}", exc_info=True)
@@ -759,13 +921,15 @@ class LinuxSandboxBackend(BaseSandbox):
                 self.sandbox_id = None
 
     def __str__(self):
-        return (f"MySandbox(\n"
-                f"      task_context_box_name={self.task_context_box_name},\n"
-                f"      task_context_box_id={self.task_context_box_id},\n"
-                f"      image_id={self.image_id},\n"
-                f"      session_id={self._session_id},\n"
-                f"      sandbox_max_running_time={self._sandbox_max_running_time_str},\n"
-                f"      idle_timeout={self._idle_timeout})")
+        return (
+            f"MySandbox(\n"
+            f"      task_context_box_name={self.task_context_box_name},\n"
+            f"      task_context_box_id={self.task_context_box_id},\n"
+            f"      image_id={self.image_id},\n"
+            f"      session_id={self._session_id},\n"
+            f"      sandbox_max_running_time={self._sandbox_max_running_time_str},\n"
+            f"      idle_timeout={self._idle_timeout})"
+        )
 
     def __enter__(self):
         """支持 with 语句：进入时返回实例"""
@@ -775,8 +939,12 @@ class LinuxSandboxBackend(BaseSandbox):
         """支持 with 语句：退出时自动清理资源"""
         if self.session:
             logger.warning(
-                f"已经退出{self.__class__.__name__}的with块，但当前会话没有被杀死，由退出函数负责兜底删除该还活跃着的会话")
+                f"已经退出{self.__class__.__name__}的with块，但当前会话没有被杀死，由退出函数负责兜底删除该还活跃着的会话"
+            )
             self.delete_session()
         if exc_type:
-            logger.info(f"❌ {self.__class__.__name__} 运行期间发生错误: {exc_val}", exc_info=True)
+            logger.info(
+                f"❌ {self.__class__.__name__} 运行期间发生错误: {exc_val}",
+                exc_info=True,
+            )
         return False  # 不吞掉异常

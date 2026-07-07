@@ -308,7 +308,8 @@ def _build_send_message_tool(*,
             #         )]
             #     }
             # )
-            raise e  # 抛出异常，将由主调智能体的 ToolRetryMiddleware实例 来处理该异常
+            raise e  # 抛出异常，将由主调智能体的 ToolRetryMiddleware实例 来处理该异常。
+        # 这是一种不负责的表现，相当于把错误处理责任交给更外层的代码，会降低该工具的内聚程度！！！
         finally:
             # 释放锁
             lock.release()
@@ -386,7 +387,7 @@ def _build_send_message_tool(*,
             #         )]
             #     }
             # )
-            raise e  # 抛出异常，将由主调智能体的 ToolRetryMiddleware实例 来处理该异常
+            raise e  # 抛出异常，将由主调智能体的 ToolRetryMiddleware实例 来（定制化）处理（遇到该异常是否重试、重试几次、重试失败时的策略-继续or终止智能体运行）该异常，这样才更符合LangChain智能体中间件的哲学
         finally:
             # ⭐ 释放锁
             lock.release()
