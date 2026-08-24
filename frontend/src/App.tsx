@@ -55,7 +55,7 @@ const App: React.FC<AppProps> = ({ initialTask }) => {
           }}
         >
           <div style={{ color: "#fff", fontSize: 20, fontWeight: "bold" }}>
-            基于多智能体协同的软件自主开发平台V1.0
+            基于多智能体协同的自主软件开发平台
           </div>
           <div style={{ color: "#fff", fontSize: 14 }}>
             Multi-Agent Software Development Platform

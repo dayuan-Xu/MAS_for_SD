@@ -59,3 +59,5 @@ htmlcov/
 /registered_tasks/
 /warehouse/
 .langgraph_api/
+
+.trae/
