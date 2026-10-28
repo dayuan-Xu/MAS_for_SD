@@ -25,7 +25,7 @@ from backend.app.services.execution_service import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/agent_team_sessions", tags=["agent team sessions"])
+router = APIRouter(prefix="/agent_team_sessions", tags=["智能体团队会话"])
 
 
 @router.post("/start/{task_id}")

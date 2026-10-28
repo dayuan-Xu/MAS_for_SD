@@ -24,7 +24,7 @@ from backend.app.services.task_service import (
 )
 from backend.app.core.database import get_db
 
-router = APIRouter(prefix="/tasks", tags=["task management"])
+router = APIRouter(prefix="/tasks", tags=["软件开发任务管理"])
 
 
 @router.post("", response_model=ApiResponse[TaskResponse], status_code=201)
