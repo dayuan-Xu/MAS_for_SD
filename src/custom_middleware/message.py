@@ -3,6 +3,7 @@
 # 核心特性：
 # 1. 专家智能体编译时传入 checkpointer，实现独立的状态持久化
 # 2. 通过 CommunicateMiddleware UserAgent state中的expert_thread_ids 字典（每个thread_id可视为文件名）管理每个专家的 thread_id，
+# 原因是每个checkpoint会按照thread_id进行分组，而我们希望专家sub智能体自己的checkpoints完全独立于主调智能体的checkpoints。
 # 同时结合checkpoint_ns（可视为文件夹）完成专家图状态的正确访问----在不同专家应用了不同的thread id后，也有必要在执行专家时配置不同的ns！！！
 # 结合ns以表明专家智能体的检查点不属于顶层图""
 # 3. communicate 工具调用时自动检测并生成 thread_id（懒加载策略）
